@@ -11,23 +11,16 @@ if [ -f "$CONFIG_PATH" ]; then
     export SUBSCRIPTION_TOKEN=*** -r '.subscription_token // ""' "$CONFIG_PATH")
     export INSTANCE_NAME=$(jq -r '.instance_name // "My Home Assistant"' "$CONFIG_PATH")
     export HEARTBEAT_INTERVAL=$(jq -r '.heartbeat_interval // 300' "$CONFIG_PATH")
-    export MONITOR_ENTITIES=$(jq -r '.monitor_entities // true' "$CONFIG_PATH")
-    export MONITOR_DISK=$(jq -r '.monitor_disk // true' "$CONFIG_PATH")
-    export MONITOR_AUTOMATIONS=$(jq -r '.monitor_automations // true' "$CONFIG_PATH")
-    export MONITOR_UPDATES=$(jq -r '.monitor_updates // true' "$CONFIG_PATH")
-    export MONITOR_BACKUPS=$(jq -r '.monitor_backups // false' "$CONFIG_PATH")
-    export MONITOR_FRIGATE=$(jq -r '.monitor_frigate // false' "$CONFIG_PATH")
     export REPORT_DAYS=$(jq -r '.report_days // 30' "$CONFIG_PATH")
 else
-    echo "WARNING: $CONFIG_PATH not found, using environment variables"
+    echo "WARNING: $CONFIG_PATH not found"
 fi
 
-# Get HA token from supervisor environment
+# HA token
 if [ -f /run/s6/container_environment/HA_TOKEN ]; then
     export HA_TOKEN=*** /run/s6/container_environment/HA_TOKEN)
 fi
 
-# HA API URL
 export HA_URL="http://localhost:8123"
 
 echo "Platform: ${PLATFORM_URL:-not set}"

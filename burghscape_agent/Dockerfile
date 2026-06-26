@@ -19,9 +19,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the app package
 COPY app ./app
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
-CMD ["/run.sh"]
+# Use Python entrypoint that handles config loading robustly
+COPY entrypoint.py /entrypoint.py
+RUN chmod +x /entrypoint.py
+
+CMD ["python3", "/entrypoint.py"]
