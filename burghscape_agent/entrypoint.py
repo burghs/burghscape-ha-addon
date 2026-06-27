@@ -107,7 +107,7 @@ def main():
             print("HA_TOKEN loaded from supervisor")
     
     # Set HA URL for API calls
-    os.environ.setdefault("HA_URL", "http://supervisor/core")
+    os.environ["HA_URL"] = "http://supervisor/core/"
     
     # Verify cloudflared
     try:
