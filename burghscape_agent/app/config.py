@@ -26,7 +26,7 @@ class Config:
     
     def __init__(self):
         # HA Core connection - use supervisor API proxy
-        self.ha_url = os.getenv("HA_URL", "http://supervisor/core")
+        self.ha_url = os.getenv("HA_URL", "http://supervisor/core/")
         self.ha_token = os.getenv("HA_TOKEN", "")
         
         # Platform connection
