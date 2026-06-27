@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import traceback
 
 CONFIG_PATH = "/data/options.json"
 
@@ -13,7 +14,6 @@ def load_config():
         with open(CONFIG_PATH) as f:
             options = json.load(f)
         
-        # Map options.json keys to environment variables
         env_map = {
             "platform_url": "PLATFORM_URL",
             "subscription_token": "SUBSCRIPTION_TOKEN",
@@ -47,8 +47,8 @@ def main():
             os.environ["HA_TOKEN"] = ha_token
             print(f"HA_TOKEN loaded from supervisor")
     
-    # Set HA URL
-    os.environ.setdefault("HA_URL", "http://localhost:8123")
+    # Set HA URL for API calls
+    os.environ.setdefault("HA_URL", "http://supervisor/core")
     
     # Verify cloudflared
     import subprocess
@@ -67,10 +67,14 @@ def main():
     os.chdir("/app")
     sys.path.insert(0, "/app")
     
-    # Import and run the main loop
-    from app.main import main_loop
-    import asyncio
-    asyncio.run(main_loop())
+    try:
+        from app.main import main_loop
+        import asyncio
+        asyncio.run(main_loop())
+    except Exception as e:
+        print(f"FATAL ERROR: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
