@@ -25,8 +25,8 @@ class Config:
     """Configuration loaded from add-on options (set by HA)."""
     
     def __init__(self):
-        # HA Core connection
-        self.ha_url = os.getenv("HA_URL", "http://localhost:8123")
+        # HA Core connection - use supervisor API proxy
+        self.ha_url = os.getenv("HA_URL", "http://supervisor/core")
         self.ha_token = os.getenv("HA_TOKEN", "")
         
         # Platform connection

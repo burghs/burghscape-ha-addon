@@ -35,18 +35,13 @@ def write_cloudflared_config(tunnel_token: str, tunnel_id: str, hostname: str) -
     config_dir = "/config/cloudflared"
     os.makedirs(config_dir, exist_ok=True)
 
-    # Write token as credentials JSON for token-based auth
-    creds_path = os.path.join(config_dir, "credentials.json")
-    # The token is a JWT; cloudflared uses --token flag, not credentials file
-    # But we also write a proper YAML config for ingress rules
-
     import yaml
     cfg = {
         "tunnel": tunnel_id,
         "ingress": [
             {
                 "hostname": hostname,
-                "service": "http://localhost:8123",
+                "service": "http://supervisor/core",
                 "originRequest": {
                     "noTLSVerify": True
                 }
@@ -74,22 +69,18 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
     config_dir = "/config/cloudflared"
     os.makedirs(config_dir, exist_ok=True)
 
-    # Write config file for ingress rules
     config_path = write_cloudflared_config(tunnel_token, tunnel_id, hostname)
 
-    # CORRECT ORDER: cloudflared tunnel --config <file> run --token <token>
-    # --config is a "tunnel command option" (goes before run)
-    # --token is a "subcommand option" (goes after run)
+    # cloudflared tunnel run --config <file> --token <TOKEN>
     cf_bin = get_cloudflared_path()
     cmd = [
-        cf_bin, "tunnel",
+        cf_bin, "tunnel", "run",
         "--config", config_path,
-        "run",
         "--token", tunnel_token,
         "--metrics", "localhost:45678",
     ]
 
-    logger.info(f"Starting cloudflared: {' '.join(cmd[:6])}... (tunnel to {hostname})")
+    logger.info(f"Starting cloudflared: tunnel run --config {config_path} (tunnel to {hostname})")
 
     try:
         log_file = open("/config/cloudflared/cloudflared.log", "a")
@@ -100,7 +91,6 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
         )
         logger.info(f"cloudflared started (PID {process.pid})")
 
-        # Wait a moment and check it didn't immediately crash
         time.sleep(3)
         if process.poll() is not None:
             with open("/config/cloudflared/cloudflared.log", "r") as f:
@@ -112,14 +102,14 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
 
         return process
     except FileNotFoundError:
-        logger.error("cloudflared not installed! Check Dockerfile.")
+        logger.error("cloudflared not installed!")
         return None
 
 
 def stop_cloudflared():
     """Stop cloudflared tunnel process."""
     global cloudflared_process
-    if cloudflared_process and cloudflared_process.poll() is None:
+    if cloudflared_process and cloudflared_process.poll() is not None:
         logger.info("Stopping cloudflared...")
         cloudflared_process.terminate()
         try:
@@ -136,7 +126,6 @@ def is_cloudflared_healthy() -> bool:
         return False
     if cloudflared_process.poll() is not None:
         return False
-    # Could also check metrics endpoint at localhost:45678/metrics
     return True
 
 
@@ -157,7 +146,6 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
 
     logger.info(f"Tunnel config: id={tunnel_id}, hostname={hostname}")
 
-    # Check if cloudflared is installed
     try:
         cf_bin = get_cloudflared_path()
         result = subprocess.run([cf_bin, "--version"], capture_output=True, text=True)
@@ -166,7 +154,6 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
         logger.error("cloudflared not found in container!")
         return False
 
-    # Start tunnel
     cloudflared_process = start_cloudflared(tunnel_token, tunnel_id, hostname)
     return cloudflared_process is not None
 
@@ -176,7 +163,6 @@ async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
     logger.info("Collecting HA report...")
     report = await ha.get_full_report()
 
-    # Include tunnel status
     report["tunnel_running"] = is_cloudflared_healthy()
 
     logger.info(
@@ -198,7 +184,6 @@ async def main_loop():
     logger.info("Instance: %s", config.instance_name)
     logger.info("Heartbeat: every %ss", config.heartbeat_interval)
 
-    # Setup signal handlers
     def handle_signal(sig, frame):
         logger.info("Received signal %s, shutting down...", sig)
         stop_cloudflared()
@@ -212,7 +197,6 @@ async def main_loop():
     while True:
         try:
             async with HAClient(config) as ha, PlatformClient(config) as platform:
-                # Setup tunnel on first run (or after restart)
                 if not tunnel_setup_done:
                     tunnel_setup_done = await setup_tunnel(platform)
 
@@ -222,7 +206,6 @@ async def main_loop():
         except Exception as e:
             logger.error("Error in main loop: %s", e, exc_info=True)
 
-        # Check cloudflared health — restart if died
         if not is_cloudflared_healthy():
             if tunnel_setup_done:
                 logger.warning("cloudflared died, will restart on next cycle...")
