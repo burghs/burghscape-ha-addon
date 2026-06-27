@@ -41,7 +41,7 @@ def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
         "ingress": [
             {
                 "hostname": hostname,
-                "service": "http://supervisor/core",
+                "service": "http://localhost:8123",
                 "originRequest": {
                     "noTLSVerify": True
                 }
@@ -68,7 +68,6 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
 
     config_path = write_cloudflared_config(tunnel_id, hostname)
 
-    # Correct syntax for cloudflared 2026.x:
     # cloudflared tunnel --config <file> run --token <TOKEN> <TUNNEL_ID>
     cf_bin = get_cloudflared_path()
     cmd = [
@@ -90,7 +89,7 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
         )
         logger.info(f"cloudflared started (PID {process.pid})")
 
-        time.sleep(4)
+        time.sleep(5)
         if process.poll() is not None:
             with open("/config/cloudflared/cloudflared.log", "r") as f:
                 last_lines = f.readlines()[-15:]
