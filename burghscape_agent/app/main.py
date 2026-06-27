@@ -30,7 +30,7 @@ def get_cloudflared_path() -> str:
     return "cloudflared"
 
 
-def write_cloudflared_config(tunnel_token: str, tunnel_id: str, hostname: str) -> str:
+def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
     """Write cloudflared config file and return path."""
     config_dir = "/config/cloudflared"
     os.makedirs(config_dir, exist_ok=True)
@@ -59,28 +59,27 @@ def write_cloudflared_config(tunnel_token: str, tunnel_id: str, hostname: str) -
 
 
 def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subprocess.Popen:
-    """Start cloudflared tunnel process with correct argument order."""
+    """Start cloudflared tunnel process."""
     global cloudflared_process
 
     if cloudflared_process and cloudflared_process.poll() is None:
         logger.info("cloudflared already running")
         return cloudflared_process
 
-    config_dir = "/config/cloudflared"
-    os.makedirs(config_dir, exist_ok=True)
+    config_path = write_cloudflared_config(tunnel_id, hostname)
 
-    config_path = write_cloudflared_config(tunnel_token, tunnel_id, hostname)
-
-    # cloudflared tunnel run --config <file> --token <TOKEN>
+    # Correct syntax for cloudflared 2026.x:
+    # cloudflared tunnel --config <file> run --token <TOKEN> <TUNNEL_ID>
     cf_bin = get_cloudflared_path()
     cmd = [
-        cf_bin, "tunnel", "run",
+        cf_bin, "tunnel",
         "--config", config_path,
+        "run",
         "--token", tunnel_token,
-        "--metrics", "localhost:45678",
+        tunnel_id,
     ]
 
-    logger.info(f"Starting cloudflared: tunnel run --config {config_path} (tunnel to {hostname})")
+    logger.info(f"Starting cloudflared: tunnel --config ... run --token ... {tunnel_id} (to {hostname})")
 
     try:
         log_file = open("/config/cloudflared/cloudflared.log", "a")
@@ -91,11 +90,11 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
         )
         logger.info(f"cloudflared started (PID {process.pid})")
 
-        time.sleep(3)
+        time.sleep(4)
         if process.poll() is not None:
             with open("/config/cloudflared/cloudflared.log", "r") as f:
-                last_lines = f.readlines()[-10:]
-            logger.error(f"cloudflared exited immediately! Last log lines:")
+                last_lines = f.readlines()[-15:]
+            logger.error("cloudflared exited immediately! Last log lines:")
             for line in last_lines:
                 logger.error(f"  {line.strip()}")
             return None
@@ -109,7 +108,7 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
 def stop_cloudflared():
     """Stop cloudflared tunnel process."""
     global cloudflared_process
-    if cloudflared_process and cloudflared_process.poll() is not None:
+    if cloudflared_process and cloudflared_process.poll() is None:
         logger.info("Stopping cloudflared...")
         cloudflared_process.terminate()
         try:
