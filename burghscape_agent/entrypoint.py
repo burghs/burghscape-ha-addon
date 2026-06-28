@@ -79,7 +79,7 @@ def main():
     ensure_ha_trusted_proxies()
     
     # Set HA URL for API calls
-    os.environ["HA_URL"] = "http://supervisor/core/"
+    os.environ["HA_URL"] = "http://localhost:8123"
     
     # Check if we have a token
     ha_token = os.environ.get("HA_TOKEN", "")

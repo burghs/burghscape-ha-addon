@@ -53,33 +53,46 @@ class HAClient:
         return []
 
     async def get_supervisor_info(self) -> dict:
-        """Get supervisor info including addons list."""
+        """Get supervisor info including addons list.
+        Tries SUPERVISOR_TOKEN first, falls back to ha_token."""
         try:
-            supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
-            if not supervisor_token:
+            # Get token - try supervisor token first, then ha_token
+            token = os.environ.get("SUPERVISOR_TOKEN", "")
+            if not token:
                 for path in [
                     "/run/s6/container_environment/SUPERVISOR_TOKEN",
                     "/run/secrets/supervisor_token",
                 ]:
                     if os.path.isfile(path):
                         with open(path) as f:
-                            supervisor_token = f.read().strip()
+                            token = f.read().strip()
                         break
+            if not token:
+                token = self.config.ha_token
+            if not token:
+                return {"error": "No token available"}
 
-            if not supervisor_token:
-                logger.warning("No supervisor token for supervisor API")
-                return {"error": "No supervisor token"}
+            # Try multiple supervisor URLs (host_network means supervisor hostname may not resolve)
+            urls = [
+                "http://supervisor/api/supervisor/info",
+                "http://localhost:8080/api/supervisor/info",
+                "http://172.30.32.2/api/supervisor/info",
+            ]
 
             async with aiohttp.ClientSession(
-                headers={"Authorization": f"Bearer {supervisor_token}"},
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as sup_session:
-                async with sup_session.get("http://supervisor/api/supervisor/info") as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    body = await resp.text()
-                    logger.warning(f"Supervisor API HTTP {resp.status}: {body[:100]}")
-                    return {"error": f"HTTP {resp.status}"}
+                for url in urls:
+                    try:
+                        async with sup_session.get(url) as resp:
+                            if resp.status == 200:
+                                return await resp.json()
+                            logger.debug(f"Supervisor {url}: HTTP {resp.status}")
+                    except Exception as e:
+                        logger.debug(f"Supervisor {url}: {e}")
+                        continue
+                return {"error": "All supervisor endpoints failed"}
         except Exception as e:
             logger.error(f"Supervisor API exception: {e}")
             return {"error": str(e)}
