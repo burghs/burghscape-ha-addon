@@ -31,6 +31,7 @@ options:
   monitor_backups: false
   monitor_frigate: false
   report_days: 30
+  ha_token: ''
 schema:
   platform_url: url
   subscription_token: password
@@ -43,3 +44,4 @@ schema:
   monitor_backups: bool
   monitor_frigate: bool
   report_days: int(1,365)
+  ha_token: password
