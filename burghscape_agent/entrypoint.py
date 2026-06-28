@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entrypoint that loads config, sets up HA trusted_proxies, and launches the agent."""
+"""Debug and fix HA token loading + API calls."""
 import json
 import os
 import sys
@@ -11,12 +11,10 @@ HA_CONFIG_PATH = "/config/configuration.yaml"
 
 
 def load_config():
-    """Load add-on config from options.json and set as environment variables."""
     if os.path.isfile(CONFIG_PATH):
         print(f"Loading config from {CONFIG_PATH}")
         with open(CONFIG_PATH) as f:
             options = json.load(f)
-        
         env_map = {
             "platform_url": "PLATFORM_URL",
             "subscription_token": "SUBSCRIPTION_TOKEN",
@@ -30,60 +28,23 @@ def load_config():
             "monitor_frigate": "MONITOR_FRIGATE",
             "report_days": "REPORT_DAYS",
         }
-        
         for key, env_var in env_map.items():
             if key in options and options[key] not in (None, ""):
                 os.environ[env_var] = str(options[key])
                 print(f"  {env_var}={options[key]}")
     else:
-        print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
-
-
-def get_supervisor_token():
-    """Get supervisor token from env or s6 container environment."""
-    token = os.environ.get("SUPERVISOR_TOKEN", "")
-    if token:
-        return token
-    
-    # Try s6 container environment paths
-    for path in [
-        "/run/s6/container_environment/SUPERVISOR_TOKEN",
-        "/run/s6-rc.env/SUPERVISOR_TOKEN",
-    ]:
-        if os.path.isfile(path):
-            with open(path) as f:
-                token = f.read().strip()
-            if token:
-                os.environ["SUPERVISOR_TOKEN"] = token
-                return token
-    
-    # Try newer HA addon path
-    env_path = "/etc/services.d/supervisor_token"
-    if os.path.isfile(env_path):
-        with open(env_path) as f:
-            token = f.read().strip()
-        if token:
-            os.environ["SUPERVISOR_TOKEN"] = token
-            return token
-    
-    return ""
+        print(f"WARNING: {CONFIG_PATH} not found")
 
 
 def ensure_ha_trusted_proxies():
-    """Add trusted_proxies to HA configuration.yaml if not present."""
     if not os.path.isfile(HA_CONFIG_PATH):
-        print(f"WARNING: HA config not found at {HA_CONFIG_PATH}")
         return
-    
     with open(HA_CONFIG_PATH, "r") as f:
         content = f.read()
-    
     if "use_x_forwarded_for" in content and "trusted_proxies" in content:
         print("HA trusted_proxies already configured")
         return
-    
     print("Adding trusted_proxies to HA configuration.yaml...")
-    
     http_block = """
 http:
   use_x_forwarded_for: true
@@ -94,39 +55,75 @@ http:
     - 10.0.0.0/8
     - 192.168.0.0/16
 """
-    
     with open(HA_CONFIG_PATH, "a") as f:
         f.write(http_block)
+    print("Added trusted_proxies")
+
+
+def get_ha_token():
+    """Try multiple methods to get a valid HA API token."""
     
-    print("Added trusted_proxies. HA restart required to take effect.")
+    # Method 1: Check if HA_TOKEN env var is already set and non-empty
+    ha_token = os.environ.get("HA_TOKEN", "")
+    if ha_token:
+        print("HA_TOKEN found in environment")
+        return ha_token
+    
+    # Method 2: Try SUPERVISOR_TOKEN env var
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if supervisor_token:
+        print(f"SUPERVISOR_TOKEN found in env (length={len(supervisor_token)})")
+        return supervisor_token
+    
+    # Method 3: Try s6 container environment paths
+    s6_paths = [
+        "/run/s6/container_environment/SUPERVISOR_TOKEN",
+        "/run/s6/container_environment/HA_TOKEN",
+        "/run/s6-rc.env/SUPERVISOR_TOKEN",
+    ]
+    for path in s6_paths:
+        if os.path.isfile(path):
+            with open(path) as f:
+                token = f.read().strip()
+            if token:
+                print(f"Token found at {path} (length={len(token)})")
+                return token
+    
+    # Method 4: Try /run/secrets/
+    secret_paths = [
+        "/run/secrets/supervisor_token",
+        "/run/secrets/ha_token",
+    ]
+    for path in secret_paths:
+        if os.path.isfile(path):
+            with open(path) as f:
+                token = f.read().strip()
+            if token:
+                print(f"Token found at {path} (length={len(token)})")
+                return token
+    
+    # Method 5: Check all env vars for anything token-like
+    for key, val in sorted(os.environ.items()):
+        if any(x in key.upper() for x in ["TOKEN", "SECRET", "KEY", "PASS"]):
+            print(f"  Env: {key}={val[:10]}... (len={len(val)})")
+    
+    print("WARNING: No HA token found anywhere!")
+    return ""
 
 
 def main():
     load_config()
-    
-    # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
-    # Get supervisor token - use it for HA API calls
-    supervisor_token = get_supervisor_token()
-    
-    if supervisor_token:
-        # Use supervisor token for HA API (via supervisor proxy)
-        os.environ["HA_TOKEN"] = supervisor_token
-        print("HA_TOKEN set from SUPERVISOR_TOKEN")
+    # Get HA token
+    ha_token = get_ha_token()
+    if ha_token:
+        os.environ["HA_TOKEN"] = ha_token
+        print(f"HA_TOKEN set (length={len(ha_token)})")
     else:
-        # Try legacy HA_TOKEN path
-        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-        if os.path.isfile(ha_token_path):
-            with open(ha_token_path) as f:
-                ha_token = f.read().strip()
-            if ha_token:
-                os.environ["HA_TOKEN"] = ha_token
-                print("HA_TOKEN loaded from file")
-        else:
-            print("WARNING: No HA token found - HA API calls will fail!")
+        print("WARNING: HA API calls will fail without token!")
     
-    # Set HA URL for API calls
+    # Set HA URL
     os.environ["HA_URL"] = "http://supervisor/core/"
     
     # Verify cloudflared
@@ -141,7 +138,7 @@ def main():
     print(f"Instance: {os.environ.get('INSTANCE_NAME', 'My Home Assistant')}")
     print(f"Heartbeat: every {os.environ.get('HEARTBEAT_INTERVAL', '300')}s")
     
-    # Launch the agent
+    # Launch
     os.chdir("/app")
     sys.path.insert(0, "/app")
     
