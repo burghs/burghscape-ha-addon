@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: 0.2.4
+version: 0.2.5
 slug: burghscape_agent
 arch:
 - aarch64
@@ -23,6 +23,7 @@ options:
   platform_url: ''
   subscription_token: ''
   instance_name: ''
+  ha_token: ''
   heartbeat_interval: 300
   monitor_entities: true
   monitor_disk: true
@@ -35,6 +36,7 @@ schema:
   platform_url: url
   subscription_token: password
   instance_name: str
+  ha_token: password
   heartbeat_interval: int(60,3600)
   monitor_entities: bool
   monitor_disk: bool

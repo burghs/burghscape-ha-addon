@@ -19,7 +19,6 @@ class HAClient:
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
-            base_url=self.config.ha_url,
             headers={"Authorization": f"Bearer {self.config.ha_token}"},
             timeout=aiohttp.ClientTimeout(total=15),
         )
@@ -32,15 +31,16 @@ class HAClient:
     async def _get(self, path: str) -> dict[str, Any]:
         if not self.session:
             return {"error": "No session"}
+        url = f"{self.config.ha_url}{path}"
         try:
-            async with self.session.get(path) as resp:
+            async with self.session.get(url) as resp:
                 if resp.status == 200:
                     return await resp.json()
                 body = await resp.text()
-                logger.warning(f"HA API {path} returned HTTP {resp.status}: {body[:100]}")
+                logger.warning(f"HA API {url} returned HTTP {resp.status}: {body[:100]}")
                 return {"error": f"HTTP {resp.status}"}
         except Exception as e:
-            logger.error(f"HA API {path} exception: {e}")
+            logger.error(f"HA API {url} exception: {e}")
             return {"error": str(e)}
 
     async def get_config(self) -> dict:
@@ -57,10 +57,14 @@ class HAClient:
         try:
             supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
             if not supervisor_token:
-                token_path = "/run/s6/container_environment/SUPERVISOR_TOKEN"
-                if os.path.isfile(token_path):
-                    with open(token_path) as f:
-                        supervisor_token = f.read().strip()
+                for path in [
+                    "/run/s6/container_environment/SUPERVISOR_TOKEN",
+                    "/run/secrets/supervisor_token",
+                ]:
+                    if os.path.isfile(path):
+                        with open(path) as f:
+                            supervisor_token = f.read().strip()
+                        break
 
             if not supervisor_token:
                 logger.warning("No supervisor token for supervisor API")

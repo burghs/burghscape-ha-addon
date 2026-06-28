@@ -3,7 +3,6 @@ import os
 
 
 def _get_int_env(var_name, default):
-    """Safely get an integer environment variable."""
     val = os.getenv(var_name, "")
     if val == "":
         return default
@@ -14,11 +13,24 @@ def _get_int_env(var_name, default):
 
 
 def _get_bool_env(var_name, default):
-    """Safely get a boolean environment variable."""
     val = os.getenv(var_name, "")
     if val == "":
         return default
     return str(val).lower() == "true"
+
+
+def _load_token_from_files():
+    """Try to load SUPERVISOR_TOKEN from various file locations."""
+    for path in [
+        "/run/s6/container_environment/SUPERVISOR_TOKEN",
+        "/run/secrets/supervisor_token",
+    ]:
+        if os.path.isfile(path):
+            with open(path) as f:
+                token = f.read().strip()
+            if token:
+                return token
+    return ""
 
 
 class Config:
@@ -27,7 +39,12 @@ class Config:
     def __init__(self):
         # HA Core connection - use supervisor API proxy
         self.ha_url = os.getenv("HA_URL", "http://supervisor/core/")
+        
+        # HA Token: use ha_token from config first, then fall back to SUPERVISOR_TOKEN
         self.ha_token = os.getenv("HA_TOKEN", "")
+        if not self.ha_token:
+            # Fall back to SUPERVISOR_TOKEN env or file
+            self.ha_token = os.environ.get("SUPERVISOR_TOKEN", "") or _load_token_from_files()
         
         # Platform connection
         self.platform_url = os.getenv("PLATFORM_URL", "").rstrip("/")
@@ -56,7 +73,6 @@ class Config:
         self.report_days = _get_int_env("REPORT_DAYS", 30)
     
     def validate(self):
-        """Validate configuration."""
         errors = []
         if not self.platform_url:
             errors.append("PLATFORM_URL is required")
@@ -72,6 +88,3 @@ class Config:
             f"instance_name={self.instance_name}, "
             f"interval={self.heartbeat_interval}s)"
         )
-
-
-config = Config()
