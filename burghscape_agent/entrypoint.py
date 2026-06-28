@@ -9,6 +9,7 @@ import subprocess
 CONFIG_PATH = "/data/options.json"
 HA_CONFIG_PATH = "/config/configuration.yaml"
 
+
 def load_config():
     """Load add-on config from options.json and set as environment variables."""
     if os.path.isfile(CONFIG_PATH):
@@ -38,6 +39,36 @@ def load_config():
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
 
 
+def get_supervisor_token():
+    """Get supervisor token from env or s6 container environment."""
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if token:
+        return token
+    
+    # Try s6 container environment paths
+    for path in [
+        "/run/s6/container_environment/SUPERVISOR_TOKEN",
+        "/run/s6-rc.env/SUPERVISOR_TOKEN",
+    ]:
+        if os.path.isfile(path):
+            with open(path) as f:
+                token = f.read().strip()
+            if token:
+                os.environ["SUPERVISOR_TOKEN"] = token
+                return token
+    
+    # Try newer HA addon path
+    env_path = "/etc/services.d/supervisor_token"
+    if os.path.isfile(env_path):
+        with open(env_path) as f:
+            token = f.read().strip()
+        if token:
+            os.environ["SUPERVISOR_TOKEN"] = token
+            return token
+    
+    return ""
+
+
 def ensure_ha_trusted_proxies():
     """Add trusted_proxies to HA configuration.yaml if not present."""
     if not os.path.isfile(HA_CONFIG_PATH):
@@ -47,7 +78,6 @@ def ensure_ha_trusted_proxies():
     with open(HA_CONFIG_PATH, "r") as f:
         content = f.read()
     
-    # Check if already configured
     if "use_x_forwarded_for" in content and "trusted_proxies" in content:
         print("HA trusted_proxies already configured")
         return
@@ -69,26 +99,6 @@ http:
         f.write(http_block)
     
     print("Added trusted_proxies. HA restart required to take effect.")
-    
-    # Try to restart HA via supervisor API
-    try:
-        import urllib.request
-        supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
-        if os.path.isfile("/run/s6/container_environment/SUPERVISOR_TOKEN"):
-            with open("/run/s6/container_environment/SUPERVISOR_TOKEN") as f:
-                supervisor_token = f.read().strip()
-        
-        if supervisor_token:
-            req = urllib.request.Request(
-                "http://supervisor/homeassistant/restart",
-                method="POST",
-                headers={"Authorization": f"Bearer {supervisor_token}"}
-            )
-            urllib.request.urlopen(req, timeout=10)
-            print("HA restart triggered via supervisor")
-    except Exception as e:
-        print(f"Could not auto-restart HA: {e}")
-        print("Please restart HA manually for trusted_proxies to take effect")
 
 
 def main():
@@ -97,14 +107,24 @@ def main():
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
-    # Get HA token from supervisor
-    ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-    if os.path.isfile(ha_token_path):
-        with open(ha_token_path) as f:
-            ha_token = f.read().strip()
-        if ha_token:
-            os.environ["HA_TOKEN"] = ha_token
-            print("HA_TOKEN loaded from supervisor")
+    # Get supervisor token - use it for HA API calls
+    supervisor_token = get_supervisor_token()
+    
+    if supervisor_token:
+        # Use supervisor token for HA API (via supervisor proxy)
+        os.environ["HA_TOKEN"] = supervisor_token
+        print("HA_TOKEN set from SUPERVISOR_TOKEN")
+    else:
+        # Try legacy HA_TOKEN path
+        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
+        if os.path.isfile(ha_token_path):
+            with open(ha_token_path) as f:
+                ha_token = f.read().strip()
+            if ha_token:
+                os.environ["HA_TOKEN"] = ha_token
+                print("HA_TOKEN loaded from file")
+        else:
+            print("WARNING: No HA token found - HA API calls will fail!")
     
     # Set HA URL for API calls
     os.environ["HA_URL"] = "http://supervisor/core/"
@@ -133,6 +153,7 @@ def main():
         print(f"FATAL ERROR: {e}")
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
