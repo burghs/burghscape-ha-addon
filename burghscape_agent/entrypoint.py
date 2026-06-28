@@ -28,6 +28,7 @@ def load_config():
             "monitor_backups": "MONITOR_BACKUPS",
             "monitor_frigate": "MONITOR_FRIGATE",
             "report_days": "REPORT_DAYS",
+            "ha_token": "HA_TOKEN",
         }
         
         for key, env_var in env_map.items():
@@ -168,14 +169,16 @@ def main():
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
-    # Get HA token from supervisor
-    ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-    if os.path.isfile(ha_token_path):
-        with open(ha_token_path) as f:
-            ha_token = f.read().strip()
-        if ha_token:
-            os.environ["HA_TOKEN"] = ha_token
-            print("HA_TOKEN loaded from supervisor")
+    # HA_TOKEN also loaded from options.json via load_config() above
+    # Fallback: try s6 container environment
+    if not os.environ.get("HA_TOKEN"):
+        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
+        if os.path.isfile(ha_token_path):
+            with open(ha_token_path) as f:
+                ha_token = f.read().strip()
+            if ha_token:
+                os.environ["HA_TOKEN"] = ha_token
+                print("HA_TOKEN loaded from supervisor environment")
     
     # Set HA URL for API calls
     os.environ["HA_URL"] = "http://localhost:8123"
