@@ -9,7 +9,6 @@ import subprocess
 CONFIG_PATH = "/data/options.json"
 HA_CONFIG_PATH = "/config/configuration.yaml"
 
-
 def load_config():
     """Load add-on config from options.json and set as environment variables."""
     if os.path.isfile(CONFIG_PATH):
@@ -21,7 +20,6 @@ def load_config():
             "platform_url": "PLATFORM_URL",
             "subscription_token": "SUBSCRIPTION_TOKEN",
             "instance_name": "INSTANCE_NAME",
-            "ha_token": "HA_TOKEN",
             "heartbeat_interval": "HEARTBEAT_INTERVAL",
             "monitor_entities": "MONITOR_ENTITIES",
             "monitor_disk": "MONITOR_DISK",
@@ -35,13 +33,42 @@ def load_config():
         for key, env_var in env_map.items():
             if key in options and options[key] not in (None, ""):
                 os.environ[env_var] = str(options[key])
-                print(f"  {env_var}=***")
+                print(f"  {env_var}={options[key]}")
     else:
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
 
 
+def get_tunnel_hostname():
+    """Get tunnel hostname from platform API."""
+    import urllib.request
+    import json as json_mod
+    platform_url = os.environ.get("PLATFORM_URL", "https://api.mybeacon.co.za")
+    instance_name = os.environ.get("INSTANCE_NAME", "")
+    subscription_token = os.environ.get("SUBSCRIPTION_TOKEN", "")
+    
+    # Try platform API first
+    try:
+        url = f"{platform_url.rstrip('/')}/api/tunnels/config"
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {subscription_token}",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json_mod.loads(resp.read())
+            hostname = data.get("hostname", "")
+            if hostname:
+                return hostname
+    except Exception:
+        pass
+    
+    # Fallback: derive from instance name
+    instance = instance_name.lower().replace(" ", "-")
+    if instance:
+        return f"{instance}.mybeacon.co.za"
+    return None
+
+
 def ensure_ha_trusted_proxies():
-    """Add trusted_proxies to HA configuration.yaml if not present."""
+    """Add trusted_proxies and external_url to HA configuration.yaml if not present."""
     if not os.path.isfile(HA_CONFIG_PATH):
         print(f"WARNING: HA config not found at {HA_CONFIG_PATH}")
         return
@@ -49,13 +76,23 @@ def ensure_ha_trusted_proxies():
     with open(HA_CONFIG_PATH, "r") as f:
         content = f.read()
     
-    if "use_x_forwarded_for" in content and "trusted_proxies" in content:
-        print("HA trusted_proxies already configured")
+    # Get the tunnel hostname
+    hostname = get_tunnel_hostname()
+    external_url = f"https://{hostname}" if hostname else None
+    
+    # Check if already configured
+    already_has_trusted = "use_x_forwarded_for" in content and "trusted_proxies" in content
+    already_has_external = external_url and external_url in content
+    
+    if already_has_trusted and already_has_external:
+        print("HA trusted_proxies and external_url already configured")
         return
     
-    print("Adding trusted_proxies to HA configuration.yaml...")
+    changes = []
     
-    http_block = """
+    if not already_has_trusted:
+        print("Adding trusted_proxies to HA configuration.yaml...")
+        http_block = """
 http:
   use_x_forwarded_for: true
   trusted_proxies:
@@ -65,11 +102,64 @@ http:
     - 10.0.0.0/8
     - 192.168.0.0/16
 """
+        with open(HA_CONFIG_PATH, "a") as f:
+            f.write(http_block)
+        changes.append("trusted_proxies")
     
-    with open(HA_CONFIG_PATH, "a") as f:
-        f.write(http_block)
+    if not already_has_external and external_url:
+        print(f"Adding external_url ({external_url}) to HA configuration.yaml...")
+        # Add external_url to existing homeassistant block or create new one
+        if "homeassistant:" in content:
+            # Insert external_url right after the "homeassistant:" line
+            lines = content.split("\n")
+            new_lines = []
+            for line in lines:
+                new_lines.append(line)
+                if line.strip() == "homeassistant:":
+                    new_lines.append(f'  external_url: "{external_url}"')
+            with open(HA_CONFIG_PATH, "w") as f:
+                f.write("\n".join(new_lines))
+        else:
+            ha_block = f"""
+homeassistant:
+  external_url: "{external_url}"
+"""
+            with open(HA_CONFIG_PATH, "a") as f:
+                f.write(ha_block)
+        changes.append("external_url")
     
-    print("Added trusted_proxies")
+    if changes:
+        print(f"Added {', '.join(changes)}. HA restart required to take effect.")
+    
+    # Try to restart HA via supervisor API (multiple URLs for host_network)
+    try:
+        import urllib.request
+        supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+        if os.path.isfile("/run/s6/container_environment/SUPERVISOR_TOKEN"):
+            with open("/run/s6/container_environment/SUPERVISOR_TOKEN") as f:
+                supervisor_token = f.read().strip()
+        
+        if supervisor_token:
+            restarted = False
+            for url in ["http://supervisor/homeassistant/restart", "http://localhost:8080/homeassistant/restart"]:
+                try:
+                    req = urllib.request.Request(
+                        url,
+                        method="POST",
+                        headers={"Authorization": f"Bearer {supervisor_token}"}
+                    )
+                    urllib.request.urlopen(req, timeout=10)
+                    print(f"HA restart triggered via {url}")
+                    restarted = True
+                    break
+                except Exception:
+                    continue
+            if not restarted:
+                print("Could not auto-restart HA via supervisor")
+                print("Please restart HA manually for changes to take effect")
+    except Exception as e:
+        print(f"Could not auto-restart HA: {e}")
+        print("Please restart HA manually for changes to take effect")
 
 
 def main():
@@ -78,16 +168,17 @@ def main():
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
+    # Get HA token from supervisor
+    ha_token_path = "/run/s6/container_environment/HA_TOKEN"
+    if os.path.isfile(ha_token_path):
+        with open(ha_token_path) as f:
+            ha_token = f.read().strip()
+        if ha_token:
+            os.environ["HA_TOKEN"] = ha_token
+            print("HA_TOKEN loaded from supervisor")
+    
     # Set HA URL for API calls
     os.environ["HA_URL"] = "http://localhost:8123"
-    
-    # Check if we have a token
-    ha_token = os.environ.get("HA_TOKEN", "")
-    if ha_token:
-        print(f"HA_TOKEN configured (length={len(ha_token)})")
-    else:
-        print("WARNING: No HA_TOKEN set - HA API calls will fail!")
-        print("Please generate a long-lived access token in HA and add it to add-on config")
     
     # Verify cloudflared
     try:
@@ -113,7 +204,6 @@ def main():
         print(f"FATAL ERROR: {e}")
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

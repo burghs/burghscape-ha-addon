@@ -2,46 +2,43 @@
 import asyncio
 import aiohttp
 import shutil
-import logging
-import os
 from typing import Any
 from datetime import datetime, timezone
 
 from app.config import Config
-
-logger = logging.getLogger("burghscape.agent")
 
 
 class HAClient:
     def __init__(self, config: Config):
         self.config = config
         self.session: aiohttp.ClientSession | None = None
-
+    
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
+            base_url=self.config.ha_url,
             headers={"Authorization": f"Bearer {self.config.ha_token}"},
             timeout=aiohttp.ClientTimeout(total=15),
         )
         return self
-
+    
     async def __aexit__(self, *args):
         if self.session:
             await self.session.close()
-
+    
     async def _get(self, path: str) -> dict[str, Any]:
         if not self.session:
             return {"error": "No session"}
-        url = f"{self.config.ha_url}{path}"
         try:
-            async with self.session.get(url) as resp:
+            async with self.session.get(path) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                body = await resp.text()
-                logger.warning(f"HA API {url} returned HTTP {resp.status}: {body[:100]}")
                 return {"error": f"HTTP {resp.status}"}
         except Exception as e:
-            logger.error(f"HA API {url} exception: {e}")
             return {"error": str(e)}
+    
+    async def _get_raw(self, path: str) -> dict[str, Any]:
+        """GET raw (alias for _get)."""
+        return await self._get(path)
 
     async def get_config(self) -> dict:
         return await self._get("/api/config")
@@ -54,47 +51,40 @@ class HAClient:
 
     async def get_supervisor_info(self) -> dict:
         """Get supervisor info including addons list.
-        Tries SUPERVISOR_TOKEN first, falls back to ha_token."""
+        Uses supervisor API directly with supervisor token."""
         try:
-            # Get token - try supervisor token first, then ha_token
-            token = os.environ.get("SUPERVISOR_TOKEN", "")
-            if not token:
-                for path in [
-                    "/run/s6/container_environment/SUPERVISOR_TOKEN",
-                    "/run/secrets/supervisor_token",
-                ]:
-                    if os.path.isfile(path):
-                        with open(path) as f:
-                            token = f.read().strip()
-                        break
-            if not token:
-                token = self.config.ha_token
-            if not token:
-                return {"error": "No token available"}
-
-            # Try multiple supervisor URLs (host_network means supervisor hostname may not resolve)
-            urls = [
+            import os
+            supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+            if not supervisor_token:
+                # Try reading from s6 container environment
+                token_path = "/run/s6/container_environment/SUPERVISOR_TOKEN"
+                if os.path.isfile(token_path):
+                    with open(token_path) as f:
+                        supervisor_token = f.read().strip()
+            
+            if not supervisor_token:
+                return {"error": "No supervisor token available"}
+            
+            # Use a separate session for supervisor API (different base URL)
+            # With host_network:true, supervisor may be on localhost or supervisor hostname
+            supervisor_urls = [
                 "http://supervisor/api/supervisor/info",
                 "http://localhost:8080/api/supervisor/info",
                 "http://172.30.32.2/api/supervisor/info",
             ]
-
             async with aiohttp.ClientSession(
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {supervisor_token}"},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as sup_session:
-                for url in urls:
+                for url in supervisor_urls:
                     try:
                         async with sup_session.get(url) as resp:
                             if resp.status == 200:
                                 return await resp.json()
-                            logger.debug(f"Supervisor {url}: HTTP {resp.status}")
-                    except Exception as e:
-                        logger.debug(f"Supervisor {url}: {e}")
+                    except Exception:
                         continue
-                return {"error": "All supervisor endpoints failed"}
+                return {"error": "All supervisor URLs failed"}
         except Exception as e:
-            logger.error(f"Supervisor API exception: {e}")
             return {"error": str(e)}
 
     async def ping(self) -> bool:
@@ -116,6 +106,7 @@ class HAClient:
 
     async def get_full_report(self) -> dict:
         """Compile a full monitoring report with all required fields."""
+        # Always include required fields (even when offline)
         report = {
             "instance_name": self.config.instance_name,
             "ip_address": self.config.ip_address,
@@ -136,9 +127,10 @@ class HAClient:
         }
 
         try:
+            # Core data
             config_data = await self.get_config()
             states = await self.get_states()
-
+            
             report["online"] = True
             report["ha_version"] = config_data.get("version", "unknown")
 
@@ -169,13 +161,19 @@ class HAClient:
             report["location"] = config_data.get("location_name")
             report["timezone"] = config_data.get("time_zone")
             report["components"] = len(config_data.get("components", []))
+
+            # Get integrations from config components
             report["integrations"] = config_data.get("components", [])
 
-            # Get addons from supervisor API
+            # Get addons from supervisor API (or HA hassio API as fallback)
+            supervisor_info = await self.get_supervisor_info()
             try:
-                supervisor_info = await self.get_supervisor_info()
                 if "data" in supervisor_info:
                     supervisor_data = supervisor_info["data"]
+                    supervisor_version = supervisor_data.get("supervisor", "unknown")
+                    report["ha_version"] = config_data.get("version", supervisor_version)
+                    
+                    # Addons list
                     addons_list = supervisor_data.get("addons", [])
                     if isinstance(addons_list, list):
                         report["addons"] = [
@@ -189,19 +187,39 @@ class HAClient:
                             for a in addons_list
                             if isinstance(a, dict)
                         ]
+                    
+                    # Uptime from supervisor
                     report["uptime_seconds"] = supervisor_data.get("seconds_on", 0)
+
+                    # Disk info from supervisor
                     if self.config.monitor_disk:
+                        disk_free = supervisor_data.get("disk_free", 0)
                         disk_total = supervisor_data.get("disk_total", 0)
                         disk_used = supervisor_data.get("disk_used", 0)
                         if disk_total > 0:
                             report["disk_usage_percent"] = round((disk_used / disk_total) * 100, 1)
                             report["disk_total_gb"] = round(disk_total, 2)
                             report["disk_used_gb"] = round(disk_used, 2)
-            except Exception as e:
-                logger.warning(f"Supervisor API failed: {e}")
+                elif "error" in supervisor_info:
+                    # Fallback: try HA hassio API via localhost with HA token
+                    hassio_addons = await self._get("/api/hassio/addons")
+                    if isinstance(hassio_addons, dict) and "data" in hassio_addons:
+                        addons_list = hassio_addons["data"].get("addons", [])
+                        report["addons"] = [
+                            {
+                                "name": a.get("name", "Unknown"),
+                                "slug": a.get("slug", ""),
+                                "version": a.get("version", ""),
+                                "update_available": a.get("update_available", False),
+                                "state": a.get("state", "unknown"),
+                            }
+                            for a in addons_list
+                            if isinstance(a, dict)
+                        ]
+            except Exception:
+                pass  # Supervisor API might not be available
 
         except Exception as e:
             report["error"] = str(e)
-            logger.error(f"Error collecting HA report: {e}")
 
         return report
