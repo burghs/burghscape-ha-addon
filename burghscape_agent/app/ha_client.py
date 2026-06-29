@@ -53,11 +53,12 @@ class HAClient:
     async def get_supervisor_info(self) -> dict:
         """Get supervisor info including addons list.
         Uses supervisor API directly with supervisor token."""
+        import logging as _log_sup
+        _log_sup = _log_sup.getLogger("burghscape.agent")
         try:
             import os
             supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
             if not supervisor_token:
-                # Try reading from s6 container environment
                 token_path = "/run/s6/container_environment/SUPERVISOR_TOKEN"
                 if os.path.isfile(token_path):
                     with open(token_path) as f:
@@ -66,14 +67,13 @@ class HAClient:
             if not supervisor_token:
                 return {"error": "No supervisor token available"}
             
-            # Use a separate session for supervisor API (different base URL)
-            # With host_network:true, supervisor may be on localhost or supervisor hostname
+            # With host_network:true, supervisor is reachable via host network
             supervisor_urls = [
+                "http://hassio/api/supervisor/info",
                 "http://supervisor/api/supervisor/info",
-                "http://localhost:8080/api/supervisor/info",
-                "http://localhost:8099/api/supervisor/info",
                 "http://172.30.32.2/api/supervisor/info",
-                "http://172.30.32.2:8099/api/supervisor/info",
+                "http://172.30.32.2:8080/api/supervisor/info",
+                "http://localhost:8080/api/supervisor/info",
             ]
             async with aiohttp.ClientSession(
                 headers={"Authorization": f"Bearer {supervisor_token}"},
@@ -83,8 +83,12 @@ class HAClient:
                     try:
                         async with sup_session.get(url) as resp:
                             if resp.status == 200:
+                                _log_sup.info("Supervisor API OK via %s", url)
                                 return await resp.json()
-                    except Exception:
+                            else:
+                                _log_sup.warning("Supervisor API %s → HTTP %d", url, resp.status)
+                    except Exception as e:
+                        _log_sup.warning("Supervisor API %s → %s", url, str(e)[:80])
                         continue
                 return {"error": "All supervisor URLs failed"}
         except Exception as e:
@@ -319,7 +323,11 @@ class HAClient:
                             report["disk_used_gb"] = round(disk_used, 2)
                 elif "error" in supervisor_info:
                     # Fallback: try HA hassio API via localhost with HA token
+                    import logging as _log_addons
+                    _log_addons = _log_addons.getLogger("burghscape.agent")
+                    _log_addons.info("Supervisor API failed (%s), trying hassio fallback", supervisor_info.get("error"))
                     hassio_addons = await self._get("/api/hassio/addons")
+                    _log_addons.info("hassio/addons response type=%s keys=%s", type(hassio_addons).__name__, list(hassio_addons.keys()) if isinstance(hassio_addons, dict) else "?")
                     if isinstance(hassio_addons, dict) and "data" in hassio_addons:
                         addons_list = hassio_addons["data"].get("addons", [])
                         report["addons"] = [

@@ -166,7 +166,7 @@ async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
     logger.info(
         "Report: online=%s entities=%s version=%s tunnel=%s",
         report.get("online"),
-        report.get("entity_count", "?"),
+        report.get("entities_count", "?"),
         report.get("ha_version", "?"),
         report.get("tunnel_running"),
     )
