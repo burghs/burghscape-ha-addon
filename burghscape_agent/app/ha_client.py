@@ -145,6 +145,47 @@ class HAClient:
 
         return stats
 
+    async def _try_supervisor_core_api(self) -> bool:
+        """Try to set up HA API via supervisor core proxy using SUPERVISOR_TOKEN.
+        This works when ha_token is not set but supervisor proxy is reachable."""
+        import os
+        supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+        if not supervisor_token:
+            token_path = "/run/s6/container_environment/SUPERVISOR_TOKEN"
+            if os.path.isfile(token_path):
+                with open(token_path) as f:
+                    supervisor_token = f.read().strip()
+        if not supervisor_token:
+            return False
+        
+        # Try supervisor core API proxy URLs
+        supervisor_core_urls = [
+            "http://supervisor/core",
+            "http://172.30.32.2/core",
+            "http://172.30.32.2:4358/core",
+        ]
+        for base in supervisor_core_urls:
+            try:
+                async with aiohttp.ClientSession(
+                    base_url=base,
+                    headers={"Authorization": f"Bearer {supervisor_token}"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as test_sess:
+                    async with test_sess.get("/api/config") as resp:
+                        if resp.status == 200:
+                            # Re-init main session to use supervisor proxy
+                            if self.session:
+                                await self.session.close()
+                            self.session = aiohttp.ClientSession(
+                                base_url=base,
+                                headers={"Authorization": f"Bearer {supervisor_token}"},
+                                timeout=aiohttp.ClientTimeout(total=15),
+                            )
+                            return True
+            except Exception:
+                continue
+        return False
+
     async def get_full_report(self) -> dict:
         """Compile a full monitoring report with all required fields."""
         # Always include required fields (even when offline)
@@ -172,25 +213,35 @@ class HAClient:
         }
 
         try:
-            # Core data
+            # Try primary HA connection first
             config_data = await self.get_config()
             states = await self.get_states()
             
-            report["online"] = True
-            report["ha_version"] = config_data.get("version", "unknown")
+            # If primary failed (401/connection error), try supervisor core API fallback
+            if isinstance(config_data, dict) and "error" in config_data:
+                if await self._try_supervisor_core_api():
+                    config_data = await self.get_config()
+                    states = await self.get_states()
+            
+            # Only mark online if API actually responded (not an error dict)
+            if isinstance(config_data, dict) and "error" not in config_data:
+                report["online"] = True
+            else:
+                report["error"] = config_data.get("error", "HA API unreachable") if isinstance(config_data, dict) else str(config_data)
+            report["ha_version"] = config_data.get("version", "unknown") if isinstance(config_data, dict) else "unknown"
 
-            if self.config.monitor_entities:
+            if self.config.monitor_entities and isinstance(states, list):
                 report["entities_count"] = len(states)
                 report["domains"] = self.count_by_domain(states)
 
-            if self.config.monitor_automations:
+            if self.config.monitor_automations and isinstance(states, list):
                 automations = [s for s in states if s.get("entity_id", "").startswith("automation.")]
                 report["automations_count"] = len(automations)
                 report["automations_on"] = sum(
                     1 for a in automations if a.get("state") == "on"
                 )
 
-            if self.config.monitor_updates:
+            if self.config.monitor_updates and isinstance(states, list):
                 report["updates_available"] = self.count_update_entities(states)
 
             if self.config.monitor_disk:
@@ -206,13 +257,14 @@ class HAClient:
             sys_stats = self.get_system_stats()
             report.update(sys_stats)
 
-            report["ha_state"] = config_data.get("state")
-            report["location"] = config_data.get("location_name")
-            report["timezone"] = config_data.get("time_zone")
-            report["components"] = len(config_data.get("components", []))
+            if isinstance(config_data, dict):
+                report["ha_state"] = config_data.get("state")
+                report["location"] = config_data.get("location_name")
+                report["timezone"] = config_data.get("time_zone")
+                report["components"] = len(config_data.get("components", []))
 
             # Get integrations from config components
-            report["integrations"] = config_data.get("components", [])
+            report["integrations"] = config_data.get("components", []) if isinstance(config_data, dict) else []
 
             # Get addons from supervisor API (or HA hassio API as fallback)
             supervisor_info = await self.get_supervisor_info()
@@ -220,7 +272,7 @@ class HAClient:
                 if "data" in supervisor_info:
                     supervisor_data = supervisor_info["data"]
                     supervisor_version = supervisor_data.get("supervisor", "unknown")
-                    report["ha_version"] = config_data.get("version", supervisor_version)
+                    report["ha_version"] = config_data.get("version", supervisor_version) if isinstance(config_data, dict) else supervisor_version
                     
                     # Addons list
                     addons_list = supervisor_data.get("addons", [])

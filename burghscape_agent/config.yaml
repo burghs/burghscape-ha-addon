@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.8"
+version: "0.2.9"
 slug: burghscape_agent
 arch:
 - aarch64
