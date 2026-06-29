@@ -28,7 +28,6 @@ def load_config():
             "monitor_backups": "MONITOR_BACKUPS",
             "monitor_frigate": "MONITOR_FRIGATE",
             "report_days": "REPORT_DAYS",
-            "ha_token": "HA_TOKEN",
         }
         
         for key, env_var in env_map.items():
@@ -142,15 +141,7 @@ homeassistant:
         
         if supervisor_token:
             restarted = False
-            # Try multiple supervisor URLs for different network setups
-            supervisor_urls = [
-                "http://supervisor/homeassistant/restart",
-                "http://localhost:8080/homeassistant/restart",
-                "http://172.30.32.2/homeassistant/restart",
-                "http://172.30.32.2:8099/homeassistant/restart",
-                "http://supervisor-api/homeassistant/restart",
-            ]
-            for url in supervisor_urls:
+            for url in ["http://supervisor/homeassistant/restart", "http://localhost:8080/homeassistant/restart"]:
                 try:
                     req = urllib.request.Request(
                         url,
@@ -164,22 +155,8 @@ homeassistant:
                 except Exception:
                     continue
             if not restarted:
-                # Fallback: try HA core API to trigger config check (no restart but at least validate)
-                ha_token = os.environ.get("HA_TOKEN", "")
-                if ha_token:
-                    try:
-                        check_url = f"http://localhost:8123/api/config/core/check_config"
-                        req = urllib.request.Request(
-                            check_url,
-                            method="POST",
-                            headers={"Authorization": f"Bearer {ha_token}"}
-                        )
-                        urllib.request.urlopen(req, timeout=10)
-                        print("HA config validated (restart may be needed)")
-                    except Exception:
-                        pass
                 print("Could not auto-restart HA via supervisor")
-                print("IMPORTANT: Restart HA manually for Cloudflare tunnel access to work")
+                print("Please restart HA manually for changes to take effect")
     except Exception as e:
         print(f"Could not auto-restart HA: {e}")
         print("Please restart HA manually for changes to take effect")
@@ -191,16 +168,14 @@ def main():
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
-    # HA_TOKEN also loaded from options.json via load_config() above
-    # Fallback: try s6 container environment
-    if not os.environ.get("HA_TOKEN"):
-        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-        if os.path.isfile(ha_token_path):
-            with open(ha_token_path) as f:
-                ha_token = f.read().strip()
-            if ha_token:
-                os.environ["HA_TOKEN"] = ha_token
-                print("HA_TOKEN loaded from supervisor environment")
+    # Get HA token from supervisor
+    ha_token_path = "/run/s6/container_environment/HA_TOKEN"
+    if os.path.isfile(ha_token_path):
+        with open(ha_token_path) as f:
+            ha_token = f.read().strip()
+        if ha_token:
+            os.environ["HA_TOKEN"] = ha_token
+            print("HA_TOKEN loaded from supervisor")
     
     # Set HA URL for API calls
     os.environ["HA_URL"] = "http://localhost:8123"

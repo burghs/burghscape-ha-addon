@@ -104,7 +104,46 @@ class HAClient:
         return dict(sorted(domains.items(), key=lambda x: -x[1]))
 
     def count_update_entities(self, states: list) -> list[str]:
-        return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.")]
+        return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.") and s.get("state") == "on"]
+
+    def get_system_stats(self) -> dict:
+        """Collect CPU and memory usage from /proc (works with host_network:true)."""
+        stats = {}
+        try:
+            # CPU usage from /proc/stat
+            with open("/proc/stat") as f:
+                line = f.readline()
+                fields = line.split()
+                if fields[0] == "cpu":
+                    values = [int(x) for x in fields[1:]]
+                    idle = values[3]
+                    total = sum(values)
+                    usage = ((total - idle) / total) * 100 if total > 0 else 0
+                    stats["cpu_usage_percent"] = round(usage, 1)
+        except Exception:
+            pass
+
+        try:
+            # Memory from /proc/meminfo
+            mem_info = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        key = parts[0].rstrip(":")
+                        val = int(parts[1])
+                        mem_info[key] = val
+            total_kb = mem_info.get("MemTotal", 0)
+            available_kb = mem_info.get("MemAvailable", 0)
+            used_kb = total_kb - available_kb
+            if total_kb > 0:
+                stats["memory_total_gb"] = round(total_kb / (1024**2), 2)
+                stats["memory_used_gb"] = round(used_kb / (1024**2), 2)
+                stats["memory_usage_percent"] = round((used_kb / total_kb) * 100, 1)
+        except Exception:
+            pass
+
+        return stats
 
     async def get_full_report(self) -> dict:
         """Compile a full monitoring report with all required fields."""
@@ -122,6 +161,10 @@ class HAClient:
             "disk_usage_percent": 0,
             "disk_total_gb": 0,
             "disk_used_gb": 0,
+            "cpu_usage_percent": 0,
+            "memory_usage_percent": 0,
+            "memory_total_gb": 0,
+            "memory_used_gb": 0,
             "uptime_seconds": 0,
             "addons": [],
             "integrations": [],
@@ -158,6 +201,10 @@ class HAClient:
                     report["disk_used_gb"] = round(u.used / (1024**3), 2)
                 except Exception:
                     pass
+
+            # CPU and memory from /proc (requires host_network:true)
+            sys_stats = self.get_system_stats()
+            report.update(sys_stats)
 
             report["ha_state"] = config_data.get("state")
             report["location"] = config_data.get("location_name")
