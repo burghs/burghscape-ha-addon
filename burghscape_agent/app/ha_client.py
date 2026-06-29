@@ -162,12 +162,14 @@ class HAClient:
         _log2 = _logging2.getLogger("burghscape.agent")
 
         # Try supervisor core API proxy URLs + localhost:8123 with supervisor token
+        # NOTE: aiohttp requires trailing '/' on base_url
+        # With host_network:true, supervisor hostname may not resolve but IP should work
         supervisor_core_urls = [
-            "http://supervisor/core",
-            "http://172.30.32.2/core",
-            "http://172.30.32.2:4358/core",
-            "http://localhost:8123",
-            "http://127.0.0.1:8123",
+            "http://172.30.32.2/core/",
+            "http://172.30.32.2:4358/core/",
+            "http://supervisor/core/",
+            "http://localhost:8123/",
+            "http://127.0.0.1:8123/",
         ]
         for base in supervisor_core_urls:
             try:
