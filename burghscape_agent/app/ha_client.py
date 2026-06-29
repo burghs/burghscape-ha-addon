@@ -70,7 +70,9 @@ class HAClient:
             supervisor_urls = [
                 "http://supervisor/api/supervisor/info",
                 "http://localhost:8080/api/supervisor/info",
+                "http://localhost:8099/api/supervisor/info",
                 "http://172.30.32.2/api/supervisor/info",
+                "http://172.30.32.2:8099/api/supervisor/info",
             ]
             async with aiohttp.ClientSession(
                 headers={"Authorization": f"Bearer {supervisor_token}"},
