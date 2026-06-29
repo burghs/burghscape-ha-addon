@@ -158,11 +158,16 @@ class HAClient:
         if not supervisor_token:
             return False
 
+        import logging as _logging2
+        _log2 = _logging2.getLogger("burghscape.agent")
+
         # Try supervisor core API proxy URLs + localhost:8123 with supervisor token
         supervisor_core_urls = [
             "http://supervisor/core",
             "http://172.30.32.2/core",
+            "http://172.30.32.2:4358/core",
             "http://localhost:8123",
+            "http://127.0.0.1:8123",
         ]
         for base in supervisor_core_urls:
             try:
@@ -173,6 +178,7 @@ class HAClient:
                 ) as test_sess:
                     async with test_sess.get("/api/config") as resp:
                         if resp.status == 200:
+                            _log2.info("Supervisor fallback connected via %s", base)
                             if self.session:
                                 await self.session.close()
                             self.session = aiohttp.ClientSession(
@@ -181,7 +187,10 @@ class HAClient:
                                 timeout=aiohttp.ClientTimeout(total=15),
                             )
                             return True
-            except Exception:
+                        else:
+                            _log2.warning("Supervisor fallback %s → HTTP %d", base, resp.status)
+            except Exception as e:
+                _log2.warning("Supervisor fallback %s → %s: %s", base, type(e).__name__, str(e)[:100])
                 continue
         return False
 
