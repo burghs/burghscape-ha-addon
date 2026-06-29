@@ -67,32 +67,25 @@ class HAClient:
             if not supervisor_token:
                 return {"error": "No supervisor token available"}
             
-            # With host_network:true, supervisor is reachable via host network
-            # HAOS supervisor API port is typically 4358
+            # With host_network:true, supervisor API is typically unreachable (HAOS security)
+            # These are low-priority since we fall back to entity-based detection
             supervisor_urls = [
-                "http://hassio/api/supervisor/info",
-                "http://supervisor/api/supervisor/info",
                 "http://172.30.32.2/api/supervisor/info",
-                "http://172.30.32.2:4358/api/supervisor/info",
-                "http://localhost:4358/api/supervisor/info",
-                "http://localhost:8080/api/supervisor/info",
+                "http://supervisor/api/supervisor/info",
+                "http://hassio/api/supervisor/info",
             ]
             async with aiohttp.ClientSession(
                 headers={"Authorization": f"Bearer {supervisor_token}"},
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=5),
             ) as sup_session:
                 for url in supervisor_urls:
                     try:
                         async with sup_session.get(url) as resp:
                             if resp.status == 200:
-                                _log_sup.info("Supervisor API OK via %s", url)
                                 return await resp.json()
-                            else:
-                                _log_sup.warning("Supervisor API %s → HTTP %d", url, resp.status)
-                    except Exception as e:
-                        _log_sup.warning("Supervisor API %s → %s", url, str(e)[:80])
+                    except Exception:
                         continue
-                return {"error": "All supervisor URLs failed"}
+                return {"error": "Supervisor API unavailable (host_network mode)"}
         except Exception as e:
             return {"error": str(e)}
 
