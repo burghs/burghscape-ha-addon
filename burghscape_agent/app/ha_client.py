@@ -68,11 +68,13 @@ class HAClient:
                 return {"error": "No supervisor token available"}
             
             # With host_network:true, supervisor is reachable via host network
+            # HAOS supervisor API port is typically 4358
             supervisor_urls = [
                 "http://hassio/api/supervisor/info",
                 "http://supervisor/api/supervisor/info",
                 "http://172.30.32.2/api/supervisor/info",
-                "http://172.30.32.2:8080/api/supervisor/info",
+                "http://172.30.32.2:4358/api/supervisor/info",
+                "http://localhost:4358/api/supervisor/info",
                 "http://localhost:8080/api/supervisor/info",
             ]
             async with aiohttp.ClientSession(
@@ -322,25 +324,40 @@ class HAClient:
                             report["disk_total_gb"] = round(disk_total, 2)
                             report["disk_used_gb"] = round(disk_used, 2)
                 elif "error" in supervisor_info:
-                    # Fallback: try HA hassio API via localhost with HA token
+                    # Fallback: derive addons from HA update.* entities
                     import logging as _log_addons
                     _log_addons = _log_addons.getLogger("burghscape.agent")
-                    _log_addons.info("Supervisor API failed (%s), trying hassio fallback", supervisor_info.get("error"))
-                    hassio_addons = await self._get("/api/hassio/addons")
-                    _log_addons.info("hassio/addons response type=%s keys=%s", type(hassio_addons).__name__, list(hassio_addons.keys()) if isinstance(hassio_addons, dict) else "?")
-                    if isinstance(hassio_addons, dict) and "data" in hassio_addons:
-                        addons_list = hassio_addons["data"].get("addons", [])
+                    _log_addons.info("Supervisor API failed (%s), using entity fallback for addons", supervisor_info.get("error"))
+                    if isinstance(states, list):
+                        # update.* entities represent installed addons with update status
+                        addon_entities = [s for s in states if s.get("entity_id", "").startswith("update.")]
                         report["addons"] = [
                             {
-                                "name": a.get("name", "Unknown"),
-                                "slug": a.get("slug", ""),
-                                "version": a.get("version", ""),
-                                "update_available": a.get("update_available", False),
-                                "state": a.get("state", "unknown"),
+                                "name": s.get("entity_id", "").replace("update.", "").replace("_update", "").replace("_", " ").title(),
+                                "slug": s.get("entity_id", "").replace("update.", "").replace("_update", ""),
+                                "version": s.get("attributes", {}).get("installed_version", ""),
+                                "update_available": s.get("state") == "on",
+                                "state": "started" if s.get("attributes", {}).get("state") == "started" else "unknown",
                             }
-                            for a in addons_list
-                            if isinstance(a, dict)
+                            for s in addon_entities
+                            if isinstance(s, dict)
                         ]
+                    # Also try HA hassio API via localhost with HA token
+                    if not report["addons"]:
+                        hassio_addons = await self._get("/api/hassio/addons")
+                        if isinstance(hassio_addons, dict) and "data" in hassio_addons:
+                            addons_list = hassio_addons["data"].get("addons", [])
+                            report["addons"] = [
+                                {
+                                    "name": a.get("name", "Unknown"),
+                                    "slug": a.get("slug", ""),
+                                    "version": a.get("version", ""),
+                                    "update_available": a.get("update_available", False),
+                                    "state": a.get("state", "unknown"),
+                                }
+                                for a in addons_list
+                                if isinstance(a, dict)
+                            ]
             except Exception:
                 pass  # Supervisor API might not be available
 
