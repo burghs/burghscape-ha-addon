@@ -330,7 +330,14 @@ class HAClient:
                     _log_addons.info("Supervisor API failed (%s), using entity fallback for addons", supervisor_info.get("error"))
                     if isinstance(states, list):
                         # update.* entities represent installed addons with update status
-                        addon_entities = [s for s in states if s.get("entity_id", "").startswith("update.")]
+                        # Filter out system components (supervisor, core, os) - only keep real add-ons
+                        _system_slugs = {"home_assistant_supervisor", "home_assistant_core",
+                                         "home_assistant_operating_system", "caos"}
+                        addon_entities = [
+                            s for s in states
+                            if s.get("entity_id", "").startswith("update.")
+                            and s.get("entity_id", "").replace("update.", "").replace("_update", "") not in _system_slugs
+                        ]
                         report["addons"] = [
                             {
                                 "name": s.get("entity_id", "").replace("update.", "").replace("_update", "").replace("_", " ").title(),
