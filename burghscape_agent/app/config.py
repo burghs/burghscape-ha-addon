@@ -36,6 +36,7 @@ class Config:
         # Instance settings
         self.instance_name = os.getenv("INSTANCE_NAME", "My Home Assistant")
         self.ip_address = os.getenv("IP_ADDRESS", "")
+        self.burghscape_version = os.getenv("VERSION", "")
         self.heartbeat_interval = _get_int_env("HEARTBEAT_INTERVAL", 300)
         
         # Monitoring toggles

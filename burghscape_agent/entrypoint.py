@@ -22,6 +22,7 @@ def load_config():
             "instance_name": "INSTANCE_NAME",
             "heartbeat_interval": "HEARTBEAT_INTERVAL",
             "ha_token": "HA_TOKEN",
+            "version": "VERSION",
             "monitor_entities": "MONITOR_ENTITIES",
             "monitor_disk": "MONITOR_DISK",
             "monitor_automations": "MONITOR_AUTOMATIONS",

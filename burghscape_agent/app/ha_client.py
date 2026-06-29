@@ -349,6 +349,14 @@ class HAClient:
                             for s in addon_entities
                             if isinstance(s, dict)
                         ]
+                        # Add this agent itself (it won't appear in update.* entities)
+                        report["addons"].append({
+                            "name": "Burghscape Agent",
+                            "slug": "burghscape_agent",
+                            "version": self.config.burghscape_version or "",
+                            "update_available": False,
+                            "state": "started",
+                        })
                     # Also try HA hassio API via localhost with HA token
                     if not report["addons"]:
                         hassio_addons = await self._get("/api/hassio/addons")
