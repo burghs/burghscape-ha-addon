@@ -1,0 +1,142 @@
+"""Database models for Burghscape platform."""
+from datetime import datetime
+from sqlalchemy import (
+    Column, Integer, String, Float, Boolean, DateTime, Text,
+    ForeignKey, Enum as SQLEnum, JSON
+)
+from sqlalchemy.orm import relationship
+import enum
+from database import Base
+
+
+class SubscriptionTier(str, enum.Enum):
+    BASIC = "basic"
+    STANDARD = "standard"
+    PREMIUM = "premium"
+
+
+class ClientStatus(str, enum.Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    PENDING = "pending"
+    CANCELLED = "cancelled"
+
+
+class Client(Base):
+    __tablename__ = "clients"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    phone = Column(String(50))
+    subdomain = Column(String(100), unique=True, nullable=False, index=True)
+    tier = Column(SQLEnum(SubscriptionTier), default=SubscriptionTier.BASIC, nullable=False)
+    status = Column(SQLEnum(ClientStatus), default=ClientStatus.ACTIVE, nullable=False)
+    monthly_hours_included = Column(Integer, default=0)
+    hours_used_this_month = Column(Float, default=0.0)
+    cloudflare_tunnel_id = Column(String(255))
+    cloudflare_tunnel_token = Column(String(500))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_seen = Column(DateTime)
+    instances = relationship("HomeAssistantInstance", back_populates="client", cascade="all, delete-orphan")
+    support_tickets = relationship("SupportTicket", back_populates="client", cascade="all, delete-orphan")
+    backups = relationship("Backup", back_populates="client", cascade="all, delete-orphan")
+    tokens = relationship("SubscriptionToken", back_populates="client", cascade="all, delete-orphan")
+
+    @property
+    def hours_remaining(self) -> float:
+        return max(0, self.monthly_hours_included - self.hours_used_this_month)
+
+    @property
+    def portal_url(self) -> str:
+        return f"https://{self.subdomain}.mybeacon.co.za"
+
+
+class HomeAssistantInstance(Base):
+    __tablename__ = "ha_instances"
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    name = Column(String(255))
+    ha_version = Column(String(50))
+    ip_address = Column(String(45))
+    hostname = Column(String(255))
+    is_online = Column(Boolean, default=False)
+    last_backup = Column(DateTime)
+    next_backup = Column(DateTime)
+    disk_usage_percent = Column(Float)
+    disk_total_gb = Column(Float)
+    disk_used_gb = Column(Float)
+    addons = Column(JSON, default=list)
+    integrations = Column(JSON, default=list)
+    automations_count = Column(Integer, default=0)
+    entities_count = Column(Integer, default=0)
+    updates_available = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime)
+    client = relationship("Client", back_populates="instances")
+    alerts = relationship("Alert", back_populates="instance", cascade="all, delete-orphan")
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    hours_used = Column(Float, default=0.0)
+    status = Column(String(50), default="open")
+    priority = Column(String(20), default="normal")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime)
+    client = relationship("Client", back_populates="support_tickets")
+
+
+class Backup(Base):
+    __tablename__ = "backups"
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    filename = Column(String(500))
+    size_bytes = Column(Integer)
+    onedrive_item_id = Column(String(255))
+    status = Column(String(50), default="pending")
+    error_message = Column(Text)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
+    client = relationship("Client", back_populates="backups")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    id = Column(Integer, primary_key=True, index=True)
+    instance_id = Column(Integer, ForeignKey("ha_instances.id"), nullable=False)
+    alert_type = Column(String(50), nullable=False)
+    severity = Column(String(20), default="info")
+    message = Column(Text)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime)
+    instance = relationship("HomeAssistantInstance", back_populates="alerts")
+
+
+class MetricSnapshot(Base):
+    __tablename__ = "metric_snapshots"
+    id = Column(Integer, primary_key=True, index=True)
+    instance_id = Column(Integer, ForeignKey("ha_instances.id"))
+    cpu_percent = Column(Float)
+    memory_percent = Column(Float)
+    disk_percent = Column(Float)
+    uptime_seconds = Column(Integer)
+    captured_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SubscriptionToken(Base):
+    __tablename__ = "subscription_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime)
+    last_used = Column(DateTime)
+    client = relationship("Client", back_populates="tokens")

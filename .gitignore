@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+*.log
+.venv/
+venv/
+node_modules/
+dist/
+build/
+.DS_Store
+backend/app/__pycache__/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+backend/app/cloudflared/
