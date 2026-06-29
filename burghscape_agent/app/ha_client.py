@@ -32,9 +32,10 @@ class HAClient:
             async with self.session.get(path) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                return {"error": f"HTTP {resp.status}"}
+                body = await resp.text()
+                return {"error": f"HTTP {resp.status}: {body[:200]}"}
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": f"{type(e).__name__}: {str(e)[:150]}"}
     
     async def _get_raw(self, path: str) -> dict[str, Any]:
         """GET raw (alias for _get)."""
@@ -146,8 +147,7 @@ class HAClient:
         return stats
 
     async def _try_supervisor_core_api(self) -> bool:
-        """Try to set up HA API via supervisor core proxy using SUPERVISOR_TOKEN.
-        This works when ha_token is not set but supervisor proxy is reachable."""
+        """Try to set up HA API via supervisor core proxy using SUPERVISOR_TOKEN."""
         import os
         supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
         if not supervisor_token:
@@ -157,12 +157,12 @@ class HAClient:
                     supervisor_token = f.read().strip()
         if not supervisor_token:
             return False
-        
-        # Try supervisor core API proxy URLs
+
+        # Try supervisor core API proxy URLs + localhost:8123 with supervisor token
         supervisor_core_urls = [
             "http://supervisor/core",
             "http://172.30.32.2/core",
-            "http://172.30.32.2:4358/core",
+            "http://localhost:8123",
         ]
         for base in supervisor_core_urls:
             try:
@@ -173,7 +173,6 @@ class HAClient:
                 ) as test_sess:
                     async with test_sess.get("/api/config") as resp:
                         if resp.status == 200:
-                            # Re-init main session to use supervisor proxy
                             if self.session:
                                 await self.session.close()
                             self.session = aiohttp.ClientSession(
@@ -219,9 +218,15 @@ class HAClient:
             
             # If primary failed (401/connection error), try supervisor core API fallback
             if isinstance(config_data, dict) and "error" in config_data:
+                import logging as _logging
+                _log = _logging.getLogger("burghscape.agent")
+                _log.info("Primary HA API failed: %s, trying supervisor fallback...", config_data.get("error"))
                 if await self._try_supervisor_core_api():
+                    _log.info("Supervisor fallback succeeded, retrying...")
                     config_data = await self.get_config()
                     states = await self.get_states()
+                else:
+                    _log.warning("Supervisor fallback also failed")
             
             # Only mark online if API actually responded (not an error dict)
             if isinstance(config_data, dict) and "error" not in config_data:
