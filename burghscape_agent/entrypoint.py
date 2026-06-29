@@ -21,6 +21,7 @@ def load_config():
             "subscription_token": "SUBSCRIPTION_TOKEN",
             "instance_name": "INSTANCE_NAME",
             "heartbeat_interval": "HEARTBEAT_INTERVAL",
+            "ha_token": "HA_TOKEN",
             "monitor_entities": "MONITOR_ENTITIES",
             "monitor_disk": "MONITOR_DISK",
             "monitor_automations": "MONITOR_AUTOMATIONS",
@@ -168,14 +169,20 @@ def main():
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     
-    # Get HA token from supervisor
-    ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-    if os.path.isfile(ha_token_path):
-        with open(ha_token_path) as f:
-            ha_token = f.read().strip()
-        if ha_token:
-            os.environ["HA_TOKEN"] = ha_token
-            print("HA_TOKEN loaded from supervisor")
+    # Ensure HA_TOKEN is set (from env_map or s6 container env)
+    if not os.environ.get("HA_TOKEN"):
+        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
+        if os.path.isfile(ha_token_path):
+            with open(ha_token_path) as f:
+                ha_token = f.read().strip()
+            if ha_token:
+                os.environ["HA_TOKEN"] = ha_token
+                print("HA_TOKEN loaded from s6 container env")
+    
+    if os.environ.get("HA_TOKEN"):
+        print("HA_TOKEN: configured (length=%d)" % len(os.environ["HA_TOKEN"]))
+    else:
+        print("WARNING: HA_TOKEN not set — HA API calls will fail")
     
     # Set HA URL for API calls
     os.environ["HA_URL"] = "http://localhost:8123/"
