@@ -11,6 +11,7 @@ import time
 from app.config import Config
 from app.ha_client import HAClient
 from app.platform_client import PlatformClient
+from app.backup import run_backup
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,12 +164,15 @@ async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
 
     report["tunnel_running"] = is_cloudflared_healthy()
 
+    backup_info = report.get("backup", {})
+    backup_status = backup_info.get("status", "n/a") if backup_info.get("enabled") else "disabled"
     logger.info(
-        "Report: online=%s entities=%s version=%s tunnel=%s",
+        "Report: online=%s entities=%s version=%s tunnel=%s backup=%s",
         report.get("online"),
         report.get("entities_count", "?"),
         report.get("ha_version", "?"),
         report.get("tunnel_running"),
+        backup_status,
     )
     result = await platform.send_heartbeat(report)
     logger.info("Platform response: %s", result)
@@ -182,6 +186,13 @@ async def main_loop():
     logger.info("Instance: %s", config.instance_name)
     logger.info("Heartbeat: every %ss", config.heartbeat_interval)
 
+    if config.backup_enabled:
+        logger.info("Client backup enabled: every %sh → %s@%s:%s",
+                     config.backup_interval_hours,
+                     config.backup_sftp_user,
+                     config.backup_sftp_host,
+                     config.backup_sftp_path)
+
     def handle_signal(sig, frame):
         logger.info("Received signal %s, shutting down...", sig)
         stop_cloudflared()
@@ -191,6 +202,7 @@ async def main_loop():
     signal.signal(signal.SIGINT, handle_signal)
 
     tunnel_setup_done = False
+    last_backup_ts = 0
 
     while True:
         try:
@@ -201,6 +213,24 @@ async def main_loop():
                 report = await run_once(ha, platform)
                 if not report.get("online"):
                     logger.warning("HA appears offline, will retry...")
+
+                # Check if backup is due
+                if config.backup_enabled and config.backup_sftp_host:
+                    now = time.time()
+                    interval_secs = config.backup_interval_hours * 3600
+                    if now - last_backup_ts >= interval_secs:
+                        logger.info("Client backup is due, starting...")
+                        backup_ok = await run_backup(config)
+                        if backup_ok:
+                            last_backup_ts = now
+                            logger.info("Client backup completed successfully")
+                        else:
+                            logger.warning("Client backup failed, will retry next cycle")
+                    else:
+                        hours_until = (interval_secs - (now - last_backup_ts)) / 3600
+                        if hours_until < 1:
+                            logger.info("Backup due in %d minutes", int(hours_until * 60))
+
         except Exception as e:
             logger.error("Error in main loop: %s", e, exc_info=True)
 

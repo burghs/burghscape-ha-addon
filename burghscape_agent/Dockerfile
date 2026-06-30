@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl wget jq \
+    curl wget jq openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install cloudflared (multi-arch)

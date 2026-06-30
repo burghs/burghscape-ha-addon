@@ -30,6 +30,11 @@ def load_config():
             "monitor_backups": "MONITOR_BACKUPS",
             "monitor_frigate": "MONITOR_FRIGATE",
             "report_days": "REPORT_DAYS",
+            "backup_enabled": "BACKUP_ENABLED",
+            "backup_interval_hours": "BACKUP_INTERVAL_HOURS",
+            "backup_sftp_host": "BACKUP_SFTP_HOST",
+            "backup_sftp_user": "BACKUP_SFTP_USER",
+            "backup_sftp_path": "BACKUP_SFTP_PATH",
         }
         
         for key, env_var in env_map.items():
@@ -38,6 +43,29 @@ def load_config():
                 print(f"  {env_var}={options[key]}")
     else:
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
+
+
+def write_backup_ssh_key():
+    """Write backup SSH private key from config to file for paramiko."""
+    key_path = "/config/burghscape/backup_key"
+    # Check if key already written (env var set by env_map or already exists)
+    if os.path.isfile(key_path):
+        os.chmod(key_path, 0o600)
+        print("Backup SSH key already exists at %s", key_path)
+        return
+
+    # Get key from options.json directly (not in env_map to avoid printing it)
+    if os.path.isfile(CONFIG_PATH):
+        with open(CONFIG_PATH) as f:
+            options = json.load(f)
+        ssh_key = options.get("backup_ssh_key", "")
+        if ssh_key:
+            os.makedirs(os.path.dirname(key_path), exist_ok=True)
+            with open(key_path, "w") as f:
+                f.write(ssh_key)
+            os.chmod(key_path, 0o600)
+            print("Backup SSH key written to %s" % key_path)
+            os.environ["BACKUP_SSH_KEY"] = key_path
 
 
 def get_tunnel_hostname():
@@ -166,7 +194,10 @@ homeassistant:
 
 def main():
     load_config()
-    
+
+    # Write backup SSH key if configured
+    write_backup_ssh_key()
+
     # Configure HA trusted proxies for Cloudflare tunnel
     ensure_ha_trusted_proxies()
     

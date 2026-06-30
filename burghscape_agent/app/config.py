@@ -55,6 +55,14 @@ class Config:
         
         # Data retention
         self.report_days = _get_int_env("REPORT_DAYS", 30)
+
+        # Client backup (SFTP to Burghscape VM)
+        self.backup_enabled = _get_bool_env("BACKUP_ENABLED", False)
+        self.backup_interval_hours = _get_int_env("BACKUP_INTERVAL_HOURS", 24)
+        self.backup_sftp_host = os.getenv("BACKUP_SFTP_HOST", "")
+        self.backup_sftp_user = os.getenv("BACKUP_SFTP_USER", "kenny")
+        self.backup_sftp_path = os.getenv("BACKUP_SFTP_PATH", "/home/kenny/client-backups")
+        self.backup_ssh_key_path = os.getenv("BACKUP_SSH_KEY", "/config/burghscape/backup_key")
     
     def validate(self):
         """Validate configuration."""

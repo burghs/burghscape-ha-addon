@@ -106,6 +106,77 @@ class HAClient:
     def count_update_entities(self, states: list) -> list[str]:
         return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.") and s.get("state") == "on"]
 
+    def get_backup_status(self, states: list) -> dict:
+        """Extract OneDrive backup status from HA sensors (lavinir/hassio-onedrive-backup add-on)."""
+        backup = {
+            "enabled": False,
+            "last_backup": None,
+            "status": "unknown",
+            "file_count": 0,
+            "total_size_bytes": 0,
+            "last_backup_timestamp": None,
+            "next_backup": None,
+            "error": None,
+        }
+        
+        # Look for onedrive backup sensors
+        onedrive_sensors = [
+            s for s in states
+            if "onedrive" in s.get("entity_id", "").lower()
+            or "backup" in s.get("entity_id", "").lower()
+        ]
+        
+        if not onedrive_sensors:
+            return backup
+        
+        backup["enabled"] = True
+        
+        for sensor in onedrive_sensors:
+            entity_id = sensor.get("entity_id", "")
+            state = sensor.get("state", "")
+            attrs = sensor.get("attributes", {})
+            
+            # Last backup time
+            if "last_backup" in entity_id and "timestamp" not in entity_id:
+                backup["last_backup"] = state
+                backup["last_backup_timestamp"] = attrs.get("last_backup") or state
+            
+            # Backup status/state
+            if entity_id.endswith("_status") or entity_id.endswith("_state"):
+                backup["status"] = state
+            
+            # File count
+            if "file" in entity_id and "count" in entity_id:
+                try:
+                    backup["file_count"] = int(float(state))
+                except (ValueError, TypeError):
+                    pass
+            
+            # Size
+            if "size" in entity_id:
+                try:
+                    backup["total_size_bytes"] = int(float(state))
+                except (ValueError, TypeError):
+                    pass
+            
+            # Timestamp variant
+            if "last_backup_timestamp" in entity_id:
+                backup["last_backup_timestamp"] = state
+            
+            # Next backup
+            if "next_backup" in entity_id:
+                backup["next_backup"] = state
+            
+            # Error/problem
+            if "problem" in entity_id and state == "on":
+                backup["error"] = "Backup problem detected"
+        
+        # If we found onedrive sensors but no explicit status, infer from last_backup
+        if backup["status"] == "unknown" and backup["last_backup"]:
+            backup["status"] = "ok"
+        
+        return backup
+
     def get_system_stats(self) -> dict:
         """Collect CPU and memory usage from /proc (works with host_network:true)."""
         stats = {}
@@ -219,6 +290,16 @@ class HAClient:
             "addons": [],
             "integrations": [],
             "cloudflare_tunnel_token": self.config.cloudflare_tunnel_token,
+            "backup": {
+                "enabled": False,
+                "last_backup": None,
+                "status": "unknown",
+                "file_count": 0,
+                "total_size_bytes": 0,
+                "last_backup_timestamp": None,
+                "next_backup": None,
+                "error": None,
+            },
         }
 
         try:
@@ -271,6 +352,10 @@ class HAClient:
             # CPU and memory from /proc (requires host_network:true)
             sys_stats = self.get_system_stats()
             report.update(sys_stats)
+
+            # OneDrive backup status from HA sensors
+            if self.config.monitor_backups and isinstance(states, list):
+                report["backup"] = self.get_backup_status(states)
 
             if isinstance(config_data, dict):
                 report["ha_state"] = config_data.get("state")

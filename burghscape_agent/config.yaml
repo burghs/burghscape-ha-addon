@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.19"
+version: "0.2.20"
 slug: burghscape_agent
 arch:
 - aarch64
@@ -32,6 +32,12 @@ options:
   monitor_frigate: false
   report_days: 30
   ha_token: ''
+  backup_enabled: false
+  backup_interval_hours: 24
+  backup_sftp_host: ''
+  backup_sftp_user: 'kenny'
+  backup_sftp_path: '/home/kenny/client-backups'
+  backup_ssh_key: ''
 schema:
   platform_url: url
   subscription_token: password
@@ -45,3 +51,9 @@ schema:
   monitor_frigate: bool
   report_days: int(1,365)
   ha_token: password
+  backup_enabled: bool
+  backup_interval_hours: int(1,168)
+  backup_sftp_host: str
+  backup_sftp_user: str
+  backup_sftp_path: str
+  backup_ssh_key: password
