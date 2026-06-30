@@ -38,6 +38,8 @@ options:
   backup_sftp_user: 'kenny'
   backup_sftp_path: '/home/kenny/client-backups'
   backup_ssh_key: ''
+  tailscale_authkey: ''
+  backup_keep_count: 3
 schema:
   platform_url: url
   subscription_token: password
@@ -57,3 +59,5 @@ schema:
   backup_sftp_user: str
   backup_sftp_path: str
   backup_ssh_key: password
+  tailscale_authkey: password
+  backup_keep_count: int(1,30)

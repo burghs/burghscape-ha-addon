@@ -215,8 +215,14 @@ def upload_sftp(
         return False
 
 
-async def run_backup(config: Config) -> bool:
-    """Generate and upload a backup. Returns True on success."""
+async def run_backup(config: Config) -> dict:
+    """Generate and upload a backup. Returns status dict."""
+    result = {
+        "success": False,
+        "timestamp": None,
+        "size_bytes": 0,
+        "error": None,
+    }
     instance_slug = config.instance_name.lower().replace(" ", "-")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"{instance_slug}_{timestamp}.tar"
@@ -229,7 +235,8 @@ async def run_backup(config: Config) -> bool:
 
     if not data:
         logger.error("All backup methods failed")
-        return False
+        result["error"] = "All backup generation methods failed"
+        return result
 
     # Get SFTP config
     remote_host = config.backup_sftp_host
@@ -245,7 +252,10 @@ async def run_backup(config: Config) -> bool:
         with open(local_path, "wb") as f:
             f.write(data)
         logger.info("Backup saved locally: %s", local_path)
-        return True
+        result["success"] = True
+        result["timestamp"] = timestamp
+        result["size_bytes"] = len(data)
+        return result
 
     remote_path = f"{remote_base}/{instance_slug}"
 
@@ -262,4 +272,75 @@ async def run_backup(config: Config) -> bool:
         filename,
     )
 
-    return success
+    if success:
+        # Enforce retention: keep only last N backups
+        await loop.run_in_executor(
+            None,
+            cleanup_old_backups,
+            remote_path,
+            instance_slug,
+            config.backup_keep_count,
+            ssh_key_path,
+            remote_host,
+            remote_user,
+        )
+
+    result["success"] = success
+    result["timestamp"] = timestamp
+    result["size_bytes"] = len(data)
+    if not success:
+        result["error"] = "SFTP upload failed"
+    return result
+
+
+def cleanup_old_backups(
+    remote_path: str,
+    instance_slug: str,
+    keep_count: int,
+    ssh_key_path: str,
+    remote_host: str,
+    remote_user: str,
+):
+    """Delete old backups on remote server, keeping only the last N."""
+    try:
+        import paramiko
+    except ImportError:
+        return
+
+    try:
+        key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(
+            hostname=remote_host,
+            username=remote_user,
+            pkey=key,
+            timeout=30,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+
+        sftp = ssh.open_sftp()
+        files = sftp.listdir(remote_path)
+
+        # Filter to this instance's backup files
+        backup_files = sorted(
+            [f for f in files if f.startswith(instance_slug) and f.endswith(".tar")]
+        )
+
+        # Delete oldest if we have more than keep_count
+        if len(backup_files) > keep_count:
+            to_delete = backup_files[:len(backup_files) - keep_count]
+            for old_file in to_delete:
+                old_path = f"{remote_path}/{old_file}"
+                try:
+                    sftp.remove(old_path)
+                    logger.info("Deleted old backup: %s", old_path)
+                except Exception:
+                    pass
+
+        sftp.close()
+        ssh.close()
+        logger.info("Retention cleanup done: kept %d, deleted %d", keep_count, len(backup_files) - keep_count if len(backup_files) > keep_count else 0)
+    except Exception as e:
+        logger.error("Retention cleanup error: %s", e)

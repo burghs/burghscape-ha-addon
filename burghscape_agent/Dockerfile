@@ -1,8 +1,11 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl wget jq openssh-client \
+    curl wget jq openssh-client iptables \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Tailscale
+RUN curl -fsSL https://tailscale.com/install.sh | sh
 
 # Install cloudflared (multi-arch)
 RUN arch=$(dpkg --print-architecture) && \

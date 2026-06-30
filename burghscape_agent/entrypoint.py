@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 import traceback
 import subprocess
 
@@ -35,12 +36,16 @@ def load_config():
             "backup_sftp_host": "BACKUP_SFTP_HOST",
             "backup_sftp_user": "BACKUP_SFTP_USER",
             "backup_sftp_path": "BACKUP_SFTP_PATH",
+            "tailscale_authkey": "TAILSCALE_AUTHKEY",
         }
-        
+
         for key, env_var in env_map.items():
             if key in options and options[key] not in (None, ""):
                 os.environ[env_var] = str(options[key])
-                print(f"  {env_var}={options[key]}")
+                if key == "tailscale_authkey":
+                    print(f"  {env_var}=***")
+                else:
+                    print(f"  {env_var}={options[key]}")
     else:
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
 
@@ -192,8 +197,128 @@ homeassistant:
         print("Please restart HA manually for changes to take effect")
 
 
+def start_tailscale(authkey: str):
+    """Start Tailscale daemon and join the Tailnet."""
+    ts_state_dir = "/config/burghscape/tailscale"
+    os.makedirs(ts_state_dir, exist_ok=True)
+
+    # Check if already authenticated
+    try:
+        result = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
+        )
+        if result.returncode == 0:
+            status = json.loads(result.stdout)
+            if status.get("BackendState") == "Running":
+                print("Tailscale already running and connected")
+                return
+    except Exception:
+        pass
+
+    # Start tailscaled daemon
+    print("Starting Tailscale...")
+    try:
+        subprocess.Popen(
+            [
+                "tailscaled",
+                "--state=" + ts_state_dir + "/tailscaled.state",
+                "--socket=" + ts_state_dir + "/tailscaled.sock",
+                "--tun=userspace-networking",
+            ],
+            stdout=open("/config/burghscape/tailscale/tailscaled.log", "a"),
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
+        )
+    except FileNotFoundError:
+        print("ERROR: tailscaled not found — Tailscale not installed?")
+        return
+
+    # Wait for daemon to start
+    time.sleep(3)
+
+    # Join Tailnet
+    print("Joining Tailnet...")
+    try:
+        result = subprocess.run(
+            [
+                "tailscale", "--socket=" + ts_state_dir + "/tailscaled.sock",
+                "up", "--auth-key=" + authkey, "--accept-routes",
+                "--hostname=burghscape-" + os.environ.get("INSTANCE_NAME", "agent").lower().replace(" ", "-"),
+            ],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
+        )
+        if result.returncode == 0:
+            print("Tailscale connected successfully")
+        else:
+            print(f"Tailscale join failed: {result.stderr.strip()}")
+    except Exception as e:
+        print(f"Tailscale error: {e}")
+
+
+def fetch_platform_config():
+    """Fetch additional config from platform (Tailscale key, backup settings).
+    
+    On first run, the agent may not have all settings in options.json.
+    This fetches them from the platform using the subscription token.
+    """
+    platform_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    token = os.environ.get("SUBSCRIPTION_TOKEN", "")
+
+    if not platform_url or not token:
+        return
+
+    try:
+        import urllib.request
+        url = platform_url + "/api/agent/config"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            import json
+            config = json.loads(resp.read())
+
+        # Set environment variables from platform config
+        env_map = {
+            "tailscale_authkey": "TAILSCALE_AUTHKEY",
+            "backup_sftp_host": "BACKUP_SFTP_HOST",
+            "backup_sftp_user": "BACKUP_SFTP_USER",
+            "backup_sftp_path": "BACKUP_SFTP_PATH",
+            "backup_interval_hours": "BACKUP_INTERVAL_HOURS",
+            "backup_keep_count": "BACKUP_KEEP_COUNT",
+        }
+
+        for cfg_key, env_var in env_map.items():
+            val = config.get(cfg_key)
+            if val and str(val):
+                os.environ[env_var] = str(val)
+                if cfg_key != "tailscale_authkey":
+                    print(f"  Platform config: {env_var}={val}")
+                else:
+                    print(f"  Platform config: {env_var}=***")
+
+        # Handle backup_enabled
+        if config.get("backup_enabled"):
+            os.environ["BACKUP_ENABLED"] = "true"
+            print("  Platform config: BACKUP_ENABLED=true")
+
+        # Handle instance_name from platform
+        instance_name = config.get("instance_name")
+        if instance_name and not os.environ.get("INSTANCE_NAME"):
+            os.environ["INSTANCE_NAME"] = instance_name
+            print(f"  Platform config: INSTANCE_NAME={instance_name}")
+
+        print("Platform config fetched successfully")
+    except Exception as e:
+        print(f"Warning: Could not fetch platform config: {e}")
+
+
 def main():
     load_config()
+
+    # Fetch additional config from platform (Tailscale key, backup settings)
+    fetch_platform_config()
 
     # Write backup SSH key if configured
     write_backup_ssh_key()
@@ -230,7 +355,14 @@ def main():
     print(f"Platform: {os.environ.get('PLATFORM_URL', 'not set')}")
     print(f"Instance: {os.environ.get('INSTANCE_NAME', 'My Home Assistant')}")
     print(f"Heartbeat: every {os.environ.get('HEARTBEAT_INTERVAL', '300')}s")
-    
+
+    # Start Tailscale for backup SFTP + remote access
+    tailscale_authkey = os.environ.get("TAILSCALE_AUTHKEY", "")
+    if tailscale_authkey:
+        start_tailscale(tailscale_authkey)
+    else:
+        print("TAILSCALE_AUTHKEY not set — Tailscale disabled (backups via SFTP unavailable)")
+
     # Launch the agent
     os.chdir("/app")
     sys.path.insert(0, "/app")

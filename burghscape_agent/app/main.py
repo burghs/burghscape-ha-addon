@@ -23,6 +23,30 @@ config = Config()
 cloudflared_process = None
 
 
+def is_tailscale_connected() -> dict:
+    """Check if Tailscale is running and connected."""
+    ts_state_dir = "/config/burghscape/tailscale"
+    sock = ts_state_dir + "/tailscaled.sock"
+    if not os.path.exists(sock):
+        return {"connected": False, "ip": None, "hostname": None}
+    try:
+        result = subprocess.run(
+            ["tailscale", "--socket=" + sock, "status", "--json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            status = json.loads(result.stdout)
+            self_info = status.get("Self", {})
+            return {
+                "connected": status.get("BackendState") == "Running",
+                "ip": self_info.get("TailscaleIPs", [None])[0] if self_info.get("TailscaleIPs") else None,
+                "hostname": self_info.get("HostName"),
+            }
+    except Exception:
+        pass
+    return {"connected": False, "ip": None, "hostname": None}
+
+
 def get_cloudflared_path() -> str:
     """Find cloudflared binary."""
     for path in ["/usr/local/bin/cloudflared", "/usr/bin/cloudflared", "cloudflared"]:
@@ -220,16 +244,27 @@ async def main_loop():
                     interval_secs = config.backup_interval_hours * 3600
                     if now - last_backup_ts >= interval_secs:
                         logger.info("Client backup is due, starting...")
-                        backup_ok = await run_backup(config)
-                        if backup_ok:
+                        backup_result = await run_backup(config)
+                        if backup_result.get("success"):
                             last_backup_ts = now
-                            logger.info("Client backup completed successfully")
+                            logger.info("Client backup completed successfully (%d bytes)", backup_result.get("size_bytes", 0))
                         else:
-                            logger.warning("Client backup failed, will retry next cycle")
+                            logger.warning("Client backup failed: %s", backup_result.get("error", "unknown"))
                     else:
                         hours_until = (interval_secs - (now - last_backup_ts)) / 3600
                         if hours_until < 1:
                             logger.info("Backup due in %d minutes", int(hours_until * 60))
+
+                # Include backup status in report
+                report["backup_status"] = {
+                    "enabled": config.backup_enabled,
+                    "last_backup": last_backup_ts,
+                    "interval_hours": config.backup_interval_hours,
+                    "keep_count": config.backup_keep_count,
+                }
+
+                # Include Tailscale status
+                report["tailscale"] = is_tailscale_connected()
 
         except Exception as e:
             logger.error("Error in main loop: %s", e, exc_info=True)

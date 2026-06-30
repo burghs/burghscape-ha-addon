@@ -63,6 +63,10 @@ class Config:
         self.backup_sftp_user = os.getenv("BACKUP_SFTP_USER", "kenny")
         self.backup_sftp_path = os.getenv("BACKUP_SFTP_PATH", "/home/kenny/client-backups")
         self.backup_ssh_key_path = os.getenv("BACKUP_SSH_KEY", "/config/burghscape/backup_key")
+        self.backup_keep_count = _get_int_env("BACKUP_KEEP_COUNT", 3)
+
+        # Tailscale (backup transport + remote access)
+        self.tailscale_authkey = os.getenv("TAILSCALE_AUTHKEY", "")
     
     def validate(self):
         """Validate configuration."""
