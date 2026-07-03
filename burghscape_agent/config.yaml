@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.23"
+version: "0.2.24"
 slug: burghscape_agent
 arch:
 - aarch64
@@ -16,6 +16,7 @@ ingress: true
 ingress_port: 8127
 panel_icon: mdi:shield-home
 panel_title: Burghscape Agent
+env: true
 map:
 - config:rw
 - ssl:ro
