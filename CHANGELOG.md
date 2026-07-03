@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.26 (2026-07-03)
+
+### 🎯 Fix: Backup Detection Now Works Without API
+- Switched from HA API `/api/hassio/backups` to **filesystem-based detection** — reads `/backup/` directory directly
+- This works on EVERY HA installation with NO API permissions needed
+- Backup check now always runs (no config toggle required)
+- Falls back to hassio API if filesystem unavailable
+- Falls back to entity-based detection as last resort
+
+### ✅ Portal Display
+- Backup status now shows real data: last backup time, file count, total size
+- Supports all formats: "2h ago", "3d ago", exact dates
+
 ## v0.2.25 (2026-07-03)
 
 ### ✨ New Feature: Real HA Backup Status
