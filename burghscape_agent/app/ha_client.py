@@ -121,9 +121,30 @@ class HAClient:
         try:
             if not self.session:
                 return backup
-            async with self.session.get("/api/backups") as resp:
+            # HA proxy -> supervisor API (works with regular HA token)
+            # Try hassio proxy first (most reliable for addons)
+            backup_urls = ["/api/hassio/backups", "/api/backups"]
+            resp = None
+            for url in backup_urls:
+                try:
+                    async with self.session.get(url) as r:
+                        if r.status != 404:
+                            resp = r
+                            break
+                except Exception:
+                    continue
+            if resp is None:
+                return backup
+            async with resp:
                 if resp.status == 200:
                     data = await resp.json()
+                    # hassio proxy wraps in {"data": {"backups": [...]}}
+                    if isinstance(data, dict) and "data" in data:
+                        inner = data["data"]
+                        if isinstance(inner, dict) and "backups" in inner:
+                            data = inner["backups"]
+                        elif isinstance(inner, list):
+                            data = inner
                     if isinstance(data, list) and len(data) > 0:
                         backup["enabled"] = True
                         sorted_backups = sorted(data, key=lambda b: b.get("date", ""), reverse=True)
