@@ -22,6 +22,7 @@ class ClientCreate(BaseModel):
     subdomain: str
     tier: str = "basic"
     monthly_hours_included: int = 0
+    send_welcome_email: bool = True
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
@@ -162,7 +163,23 @@ async def create_client(client_data: ClientCreate, db: AsyncSession = Depends(ge
     )
     db.add(token)
     await db.flush()
-    
+
+    # Generate Tailscale auth key for the client's add-on
+    tailscale_key = ""
+    try:
+        from services.tailscale import generate_auth_key
+        from app.config import get_settings
+        settings = get_settings()
+        import asyncio
+        loop = asyncio.get_event_loop()
+        tailscale_key = loop.run_until_complete(generate_auth_key(settings))
+        if tailscale_key:
+            client.tailscale_authkey = tailscale_key
+            await db.flush()
+    except Exception as e:
+        import logging
+        logging.getLogger("burghscape.client").warning("Failed to generate Tailscale key: %s", e)
+
     # Auto-create portal user for the client
     from routers.portal_users import hash_password
     from email_service import generate_temp_password, send_welcome_email
@@ -180,16 +197,59 @@ async def create_client(client_data: ClientCreate, db: AsyncSession = Depends(ge
     db.add(portal_user)
     await db.flush()
     
-    # Send welcome email
+    # Send welcome email (opt-in)
+    portal_url = f"https://{client.subdomain}.mybeacon.co.za"
+    if client_data.send_welcome_email:
+        send_welcome_email(
+            to_email=client.email,
+            client_name=client.name,
+            temp_password=temp_password,
+            portal_url=portal_url,
+        )
+    
+    return client_to_dict(client, token.token)
+
+
+@router.post("/{client_id}/resend-welcome")
+async def resend_welcome_email(
+    client_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalars().first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    user_result = await db.execute(
+        select(ClientUser).where(
+            ClientUser.client_id == client_id,
+            ClientUser.is_active == True
+        ).order_by(ClientUser.id)
+    )
+    portal_user = user_result.scalars().first()
+    from email_service import generate_temp_password, send_welcome_email
+    from routers.portal_users import hash_password
+    if not portal_user:
+        temp_password = generate_temp_password(10)
+        portal_user = ClientUser(
+            client_id=client.id, name=client.name, email=client.email,
+            password_hash=hash_password(temp_password),
+            role="admin", force_password_change=True,
+        )
+        db.add(portal_user)
+        await db.flush()
+    else:
+        temp_password = generate_temp_password(10)
+        portal_user.password_hash = hash_password(temp_password)
+        portal_user.force_password_change = True
+        await db.flush()
     portal_url = f"https://{client.subdomain}.mybeacon.co.za"
     send_welcome_email(
-        to_email=client.email,
+        to_email=client.email or portal_user.email,
         client_name=client.name,
         temp_password=temp_password,
         portal_url=portal_url,
     )
-    
-    return client_to_dict(client, token.token)
+    return {"status": "sent", "email": client.email or portal_user.email}
 
 
 @router.get("/{client_id}", response_model=ClientResponse)

@@ -12,7 +12,7 @@ export default function Clients() {
   const [showForm, setShowForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', subdomain: '', tier: 'basic' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', subdomain: '', tier: 'basic', send_welcome_email: true });
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', subdomain: '', tier: 'basic', status: 'active' });
   const [selectedClient, setSelectedClient] = useState(null);
   const [tickets, setTickets] = useState([]);
@@ -191,7 +191,7 @@ export default function Clients() {
       });
       if (res.ok) {
         setShowForm(false);
-        setForm({ name: '', email: '', phone: '', subdomain: '', tier: 'basic' });
+        setForm({ name: '', email: '', phone: '', subdomain: '', tier: 'basic', send_welcome_email: true });
         fetchClients();
     fetchPortalUsers();
       }
@@ -423,6 +423,54 @@ export default function Clients() {
       case 'closed': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // Resend welcome email
+  const resendWelcomeEmail = async () => {
+    const clientId = selectedClient?.id;
+    if (!clientId) return;
+    const msgEl = document.getElementById('client-action-msg');
+    try {
+      const res = await fetch(`/api/clients/${clientId}/resend-welcome`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (msgEl) {
+        if (res.ok) { msgEl.textContent = 'Welcome email sent!'; msgEl.className = 'text-sm text-green-600'; }
+        else { msgEl.textContent = 'Failed to send email'; msgEl.className = 'text-sm text-red-600'; }
+        msgEl.classList.remove('hidden');
+        setTimeout(() => msgEl.classList.add('hidden'), 5000);
+      }
+    } catch (err) { console.error('Failed to resend welcome:', err); }
+  };
+
+  // Toggle email alerts for first instance
+  const toggleAlerts = async () => {
+    const clientId = selectedClient?.id;
+    if (!clientId) return;
+    const msgEl = document.getElementById('client-action-msg');
+    try {
+      // Get instance IDs for this client
+      const instRes = await fetch(`/api/instances`, { credentials: 'include' });
+      if (!instRes.ok) throw new Error('Failed to get instances');
+      const instances = await instRes.json();
+      let toggled = 0;
+      for (const inst of instances) {
+        if (inst.client_id === clientId || inst.name?.includes(selectedClient.name) || inst.id === clientId) {
+          const res = await fetch(`/api/instances/${inst.id}/toggle-alerts`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          if (res.ok) toggled++;
+        }
+      }
+      if (msgEl) {
+        if (toggled > 0) { msgEl.textContent = `Alerts toggled for ${toggled} instance(s)`; msgEl.className = 'text-sm text-green-600'; }
+        else { msgEl.textContent = 'No instances found to toggle'; msgEl.className = 'text-sm text-amber-600'; }
+        msgEl.classList.remove('hidden');
+        setTimeout(() => msgEl.classList.add('hidden'), 5000);
+      }
+    } catch (err) { console.error('Failed to toggle alerts:', err); }
   };
 
   return (
@@ -747,10 +795,22 @@ export default function Clients() {
                   ))}
                 </select>
               </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="send-welcome"
+                  checked={form.send_welcome_email !== false}
+                  onChange={(e) => setForm({ ...form, send_welcome_email: e.target.checked })}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="send-welcome" className="ml-2 text-sm text-gray-600">
+                  Send welcome email with credentials
+                </label>
+              </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => { setShowForm(false); setForm({ name: '', email: '', phone: '', subdomain: '', tier: 'basic' }); }}
+                  onClick={() => { setShowForm(false); setForm({ name: '', email: '', phone: '', subdomain: '', tier: 'basic', send_welcome_email: true }); }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
                 >
                   Cancel
@@ -987,6 +1047,26 @@ export default function Clients() {
                       <p className="text-sm text-gray-500 mt-2">{hoursData.hours_remaining || 0}h remaining</p>
                     </div>
                   )}
+
+                  {/* Welcome Email + Alerts Actions */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Client Communications</h3>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={resendWelcomeEmail}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium"
+                      >
+                        Resend Welcome Email
+                      </button>
+                      <button
+                        onClick={toggleAlerts}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium"
+                      >
+                        Toggle Email Alerts
+                      </button>
+                      <span id="client-action-msg" className="text-sm text-green-600 hidden"></span>
+                    </div>
+                  </div>
 
                   {/* Active Token */}
                   {selectedClient.active_token && (

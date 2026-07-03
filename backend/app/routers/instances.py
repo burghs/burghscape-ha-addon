@@ -1,5 +1,7 @@
 """Home Assistant instance management."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_db
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -34,7 +36,6 @@ async def list_instances():
     if agent_reports:
         real_instances = []
         for name, report in agent_reports.items():
-            # Extract backup info from backup dict
             backup_data = report.get("backup", {}) or {}
             last_backup = None
             if backup_data and backup_data.get("enabled"):
@@ -74,3 +75,44 @@ async def check_updates(instance_id: int):
 @router.post("/{instance_id}/restart")
 async def restart_instance(instance_id: int):
     return {"status": "restart_requested", "instance_id": instance_id}
+
+
+@router.post("/{instance_id}/toggle-alerts")
+async def toggle_instance_alerts(
+    instance_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select
+    from models import HomeAssistantInstance as HAInstance
+    from routers.agent import agent_reports
+
+    # Try direct DB lookup
+    result = await db.execute(select(HAInstance).where(HAInstance.id == instance_id))
+    instance = result.scalars().first()
+
+    if not instance:
+        # Try dynamic hash-based ID lookup
+        for name, report in agent_reports.items():
+            hash_id = abs(hash(name)) % 10000
+            if hash_id == instance_id:
+                inst_name = report.get("instance_name", name)
+                r = await db.execute(
+                    select(HAInstance).where(
+                        HAInstance.name == inst_name
+                    )
+                )
+                instance = r.scalars().first()
+                if instance:
+                    break
+
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    instance.send_alerts = not instance.send_alerts
+    await db.flush()
+
+    return {
+        "instance_id": instance.id,
+        "send_alerts": instance.send_alerts,
+        "message": "Alerts enabled" if instance.send_alerts else "Alerts disabled"
+    }

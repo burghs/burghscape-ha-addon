@@ -30,7 +30,8 @@ async def login(response: Response, request: LoginRequest):
         value=token,
         httponly=True,
         max_age=43200,  # 12 hours
-        samesite="lax",
+        samesite="none",
+        secure=True,
     )
     
     return TokenResponse(access_token=token)

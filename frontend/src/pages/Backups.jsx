@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 
 export default function Backups() {
   const [backups, setBackups] = useState([]);
@@ -8,10 +8,10 @@ export default function Backups() {
 
   const fetchBackups = useCallback(async () => {
     try {
-      const res = await fetch('/api/backups', { credentials: 'include' });
+      const res = await fetch("/api/admin/backups", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setBackups(data);
+        setBackups(data.backups || []);
       }
       setLastUpdated(new Date());
     } catch (err) {
@@ -31,8 +31,14 @@ export default function Backups() {
   if (error) return <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-300">Error: {error}</div>;
 
   const formatSize = (bytes) => {
-    if (bytes > 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
-    return (bytes / 1048576).toFixed(0) + ' MB';
+    if (!bytes) return "Unknown";
+    if (bytes > 1073741824) return (bytes / 1073741824).toFixed(1) + " GB";
+    return (bytes / 1048576).toFixed(0) + " MB";
+  };
+
+  const formatDate = (d) => {
+    if (!d) return "-";
+    return new Date(d).toLocaleString();
   };
 
   return (
@@ -47,36 +53,57 @@ export default function Backups() {
           </div>
         </div>
       </div>
+
       {backups.length === 0 ? (
         <div className="text-gray-400">No backups recorded.</div>
       ) : (
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-900">
-              <tr>
-                <th className="text-left p-3 text-gray-400 font-medium">File</th>
-                <th className="text-left p-3 text-gray-400 font-medium">Status</th>
-                <th className="text-left p-3 text-gray-400 font-medium">Size</th>
-                <th className="text-left p-3 text-gray-400 font-medium">Started</th>
-                <th className="text-left p-3 text-gray-400 font-medium">Completed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {backups.map(b => (
-                <tr key={b.id} className="border-t border-gray-700">
-                  <td className="p-3 text-white font-mono text-xs">{b.filename}</td>
-                  <td className="p-3">
-                    <span className={`text-xs px-2 py-1 rounded-full ${b.status === 'completed' ? 'bg-green-900 text-green-300' : b.status === 'failed' ? 'bg-red-900 text-red-300' : 'bg-blue-900 text-blue-300'}`}>{b.status}</span>
-                  </td>
-                  <td className="p-3 text-gray-300">{formatSize(b.size_bytes)}</td>
-                  <td className="p-3 text-gray-300">{new Date(b.started_at).toLocaleString()}</td>
-                  <td className="p-3 text-gray-300">{b.completed_at ? new Date(b.completed_at).toLocaleString() : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {backups.map((b, i) => (
+            <div key={i} className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white font-semibold">{b.name || b.filename}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      b.status === "completed" || b.status === "available"
+                        ? "bg-green-900 text-green-300"
+                        : b.status === "failed"
+                        ? "bg-red-900 text-red-300"
+                        : "bg-blue-900 text-blue-300"
+                    }`}>{b.status || "available"}</span>
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    {b.type && <span className="mr-3">{b.type}</span>}
+                    {b.size_bytes && <span className="mr-3">{formatSize(b.size_bytes)}</span>}
+                    {b.created_at && <span>{formatDate(b.created_at)}</span>}
+                    {b.date && <span>{b.date}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {b.download_url && (
+                    <a href={b.download_url} download
+                       className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">
+                      ↓ Download
+                    </a>
+                  )}
+                  {b.client_name && (
+                    <span className="text-xs text-gray-500 self-center">{b.client_name}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
+
+      <div className="mt-8 bg-gray-800/50 rounded-xl p-5 border border-gray-700">
+        <h2 className="text-white font-semibold mb-2">How Backups Work</h2>
+        <p className="text-gray-400 text-sm">
+          Server backups include: PostgreSQL database, environment configs, Docker setup,
+          platform source code, and Cloudflare tunnel configs. Client HA backups include
+          Home Assistant snapshots uploaded by the Burghscape Agent add-on.
+        </p>
+      </div>
     </div>
   );
 }

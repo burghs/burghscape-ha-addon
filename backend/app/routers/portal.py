@@ -1,7 +1,7 @@
 """Client Portal — public-facing portal served at client.mybeacon.co.za"""
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -627,6 +627,89 @@ CHANGE_PASSWORD_HTML="""<!DOCTYPE html>
 """
 
 
+@router.get("/api/portal/backups")
+async def portal_backups(request: Request):
+    """Return backup records for the logged-in client."""
+    token = request.cookies.get("portal_token", "")
+    if not token:
+        raise HTTPException(status_code=401)
+    async with async_session() as db:
+        user_id = portal_sessions.get(token)
+        if not user_id:
+            raise HTTPException(status_code=401)
+        result = await db.execute(select(ClientUser).where(ClientUser.id == user_id))
+        user = result.scalars().first()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401)
+        from models import Backup
+        from sqlalchemy import desc
+        bresults = await db.execute(
+            select(Backup).where(Backup.client_id == user.client_id)
+            .order_by(desc(Backup.started_at))
+            .limit(20)
+        )
+        backups = bresults.scalars().all()
+        return {
+            "backups": [{
+                "id": b.id,
+                "filename": b.filename or ("backup_" + str(b.id) + ".tar.gz"),
+                "size_bytes": b.size_bytes or 0,
+                "status": b.status or "unknown",
+                "started_at": b.started_at.isoformat() if b.started_at else None,
+                "completed_at": b.completed_at.isoformat() if b.completed_at else None,
+                "download_url": ("/api/portal/backups/download/" + str(b.id)) if b.status == "completed" else None,
+            } for b in backups]
+        }
+
+
+from fastapi.responses import FileResponse
+from models import Backup
+from sqlalchemy import desc
+
+
+@router.get("/api/portal/backups/download/{backup_id}")
+async def portal_backup_download(backup_id: int, request: Request):
+    """Download a backup file for the logged-in client."""
+    token = request.cookies.get("portal_token", "")
+    if not token:
+        raise HTTPException(status_code=401)
+    async with async_session() as db:
+        user_id = portal_sessions.get(token)
+        if not user_id:
+            raise HTTPException(status_code=401)
+        result = await db.execute(select(ClientUser).where(ClientUser.id == user_id))
+        user = result.scalars().first()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401)
+        bresult = await db.execute(
+            select(Backup).where(Backup.id == backup_id, Backup.client_id == user.client_id)
+        )
+        backup = bresult.scalars().first()
+        if not backup:
+            raise HTTPException(status_code=404, detail="Backup not found")
+        if backup.status != "completed":
+            raise HTTPException(status_code=400, detail="Backup not ready")
+        from storage.factory import get_client_storage_backend
+        from config import get_settings
+        storage_config = {"backend": backup.storage_backend}
+        settings = get_settings()
+        if backup.storage_backend == "r2":
+            storage_config.update({
+                "account_id": settings.R2_ACCOUNT_ID,
+                "access_key_id": settings.R2_ACCESS_KEY_ID,
+                "secret_access_key": settings.R2_SECRET_ACCESS_KEY,
+                "bucket": settings.R2_BUCKET,
+            })
+        backend = get_client_storage_backend(storage_config)
+        download_url = await backend.generate_presigned_download_url(
+            key=backup.storage_key,
+            expires_in=3600,
+            filename=backup.filename,
+        )
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=download_url)
+
+
 @router.get("/api/portal/report")
 async def download_report(request: Request):
     """Generate and download a system report for the client."""
@@ -690,33 +773,46 @@ async def download_report(request: Request):
             if instance.disk_total_gb:
                 disk_info += f" / {instance.disk_total_gb:.1f} GB total ({instance.disk_usage_percent:.1f}%)"
         
+        logo_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="height:50px;width:auto;vertical-align:middle;margin-right:12px;"><defs><linearGradient id="lbg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#1a1a3e"/><stop offset="100%" style="stop-color:#0d0d24"/></linearGradient></defs><circle cx="100" cy="100" r="95" fill="url(#lbg)" stroke="#7c3aed" stroke-width="2.5"/><path d="M100 30 L150 50 L150 100 Q150 140 100 170 Q50 140 50 100 L50 50 Z" fill="none" stroke="#a78bfa" stroke-width="2.5"/><path d="M100 60 L130 80 L130 120 L70 120 L70 80 Z" fill="none" stroke="#c4b5fd" stroke-width="2"/><rect x="92" y="100" width="16" height="20" fill="#a78bfa" rx="2"/><circle cx="100" cy="45" r="5" fill="#a78bfa"/></svg>"""
+
         report_html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>System Report - {client.name}</title>
 <style>
-body {{ font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; }}
-h1 {{ color: #7c3aed; border-bottom: 2px solid #7c3aed; padding-bottom: 10px; }}
-h2 {{ color: #6d28d9; margin-top: 30px; }}
-.meta {{ color: #666; font-size: 14px; margin-bottom: 30px; }}
-table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
-th, td {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; }}
-th {{ background: #f5f3ff; font-weight: 600; }}
-.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }}
-.card {{ background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 15px; }}
-.card h3 {{ margin: 0 0 5px; color: #7c3aed; font-size: 24px; }}
-.card p {{ margin: 0; color: #666; font-size: 12px; }}
-.status {{ display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }}
-.status-online {{ background: #d1fae5; color: #065f46; }}
+@page {{ margin: 20mm; }}
+body {{ font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; color: #1e293b; line-height: 1.5; }}
+.header {{ display: flex; align-items: center; gap: 16px; border-bottom: 3px solid #7c3aed; padding-bottom: 16px; margin-bottom: 10px; }}
+.header-text h1 {{ margin: 0; color: #1e293b; font-size: 24px; }}
+.header-text p {{ margin: 2px 0 0; color: #7c3aed; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }}
+h2 {{ color: #6d28d9; margin-top: 28px; margin-bottom: 12px; font-size: 16px; border-left: 4px solid #7c3aed; padding-left: 10px; }}
+.meta {{ color: #64748b; font-size: 13px; margin-bottom: 24px; }}
+table {{ width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }}
+th, td {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; }}
+th {{ background: #f8fafc; font-weight: 600; color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }}
+tr:nth-child(even) {{ background: #fafafa; }}
+.grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }}
+.card {{ background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 14px; text-align: center; }}
+.card h3 {{ margin: 0 0 4px; color: #7c3aed; font-size: 22px; }}
+.card p {{ margin: 0; color: #64748b; font-size: 11px; }}
+.status {{ display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }}
+.status-online {{ background: #dcfce7; color: #166534; }}
 .status-offline {{ background: #fee2e2; color: #991b1b; }}
 ul {{ padding-left: 20px; }}
-li {{ margin: 4px 0; }}
-@media print {{ body {{ margin: 0; }} .no-print {{ display: none; }} }}
+li {{ margin: 4px 0; font-size: 13px; }}
+.footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; }}
+@media print {{ body {{ margin: 0; padding: 0; }} .no-print {{ display: none; }} }}
 </style></head>
 <body>
 <div class="no-print" style="text-align:right;margin-bottom:20px;">
-<button onclick="window.print()" style="background:#7c3aed;color:white;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;">🖨️ Print / Save PDF</button>
+<button onclick="window.print()" style="background:#7c3aed;color:white;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">Print / Save PDF</button>
 </div>
-<h1>🏠 Burghscape System Report</h1>
-<p class="meta">Generated: {now} SAST &nbsp;|&nbsp; Client: {client.name} &nbsp;|&nbsp; Report Type: System Summary</p>
+<div class="header">
+    {logo_svg}
+    <div class="header-text">
+        <h1>Burghscape System Report</h1>
+        <p>Pty Ltd  |  Smart Home Management Platform</p>
+    </div>
+</div>
+<p class="meta">Generated: {now} SAST  |  Client: {client.name}  |  Confidential</p>
 
 <div class="grid">
 <div class="card"><h3>{instance.ha_version if instance else 'N/A'}</h3><p>HA Version</p></div>
@@ -727,26 +823,34 @@ li {{ margin: 4px 0; }}
 <div class="card"><h3>{len(integrations_list)}</h3><p>Integrations</p></div>
 </div>
 
-<h2>💾 Storage</h2>
+<h2>Storage</h2>
 <p>{disk_info}</p>
 
-<h2>📦 Add-ons ({len(addons_list)})</h2>
+<h2>Add-ons ({len(addons_list)})</h2>
 <table><tr><th>Name</th><th>Version</th><th>State</th></tr>{addons_html}</table>
 
-<h2>🔌 Integrations ({len(integrations_list)})</h2>
+<h2>Integrations ({len(integrations_list)})</h2>
 <table><tr><th>Integration Name</th></tr>{integrations_html}</table>
 
-<h2>🔄 Updates Available ({len(updates_list)})</h2>
+<h2>Updates Available ({len(updates_list)})</h2>
 <ul>{updates_html}</ul>
 
 <h2>📋 Notes</h2>
 <p style="font-size:13px;color:#666;">This report is auto-generated by Burghscape Pty Ltd's monitoring system. For support, contact support@mybeacon.co.za</p>
 </body></html>"""
         
-        return HTMLResponse(
-            content=report_html,
+        # Generate PDF
+        from weasyprint import HTML as WHTML
+        from io import BytesIO
+        pdf_buffer = BytesIO()
+        WHTML(string=report_html).write_pdf(pdf_buffer)
+        pdf_buffer.seek(0)
+        
+        return Response(
+            content=pdf_buffer.getvalue(),
+            media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="burghscape-report-{client.subdomain}-{now.replace(":", "-")}.html"'
+                "Content-Disposition": f'attachment; filename="burghscape-report-{client.subdomain}-{now.replace(":", "-")}.pdf"'
             }
         )
 
@@ -942,11 +1046,38 @@ async def client_portal(request: Request):
         </div>'''
 
 
-        # Backup status
+        # Backup status (from agent heartbeat)
         backup_enabled = False
         last_backup_str = "Not configured"
         next_backup_str = "N/A"
-        if instance and instance.last_backup:
+        backup_size_str = ""
+        # Check agent heartbeat for real-time backup status
+        from routers.agent import agent_reports
+        client_reports = {k: v for k, v in agent_reports.items() if v.get("client_id") == client.id}
+        if client_reports:
+            report = list(client_reports.values())[0]
+            bs = report.get("backup_status", {})
+            if bs and bs.get("enabled"):
+                backup_enabled = True
+                last_ts = bs.get("last_backup")
+                if last_ts:
+                    from datetime import datetime as _dt
+                    delta = _dt.now() - _dt.fromtimestamp(last_ts)
+                    if delta.days > 0:
+                        last_backup_str = "{} day(s) ago".format(delta.days)
+                    elif delta.seconds > 3600:
+                        last_backup_str = "{}h ago".format(delta.seconds // 3600)
+                    else:
+                        last_backup_str = "{}m ago".format(delta.seconds // 60)
+                interval = bs.get("interval_hours", 24)
+                next_backup_str = "In {}h".format(interval)
+            # Tailscale info
+            ts = report.get("tailscale", {})
+            tailscale_ip = ts.get("ip", "") if ts else ""
+        else:
+            tailscale_ip = ""
+        # Fallback to DB fields
+        if not backup_enabled and instance and instance.last_backup:
             backup_enabled = True
             from datetime import datetime as _dt
             lb = instance.last_backup

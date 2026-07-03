@@ -1,3 +1,4 @@
+import os
 """HA Agent endpoints — token-gated."""
 import secrets
 from datetime import datetime
@@ -40,6 +41,8 @@ class AgentReport(BaseModel):
     addon_version: Optional[str] = None
     cloudflare_tunnel_token: Optional[str] = None
     backup: Optional[dict] = None
+    backup_status: Optional[dict] = None
+    tailscale: Optional[dict] = None
 
 
 class AgentStatus(BaseModel):
@@ -222,6 +225,25 @@ async def agent_report(
     # Store cloudflare tunnel token if provided
     if report.cloudflare_tunnel_token:
         client.cloudflare_tunnel_token = report.cloudflare_tunnel_token
+
+    # Store backup status from agent heartbeat
+    if report.backup_status:
+        bs = report.backup_status
+        if bs.get("last_backup"):
+            from datetime import datetime as _dt
+            try:
+                instance.last_backup = _dt.fromtimestamp(bs["last_backup"])
+            except (ValueError, TypeError):
+                pass
+        if bs.get("enabled"):
+            interval = bs.get("interval_hours", 24)
+            instance.next_backup = instance.last_backup + timedelta(hours=interval) if instance.last_backup else None
+
+    # Store tailscale info
+    if report.tailscale:
+        ts = report.tailscale
+        if ts.get("ip"):
+            instance.ip_address = ts["ip"]  # Use Tailscale IP for remote access
     
     await db.flush()
     
@@ -245,6 +267,8 @@ async def agent_report(
         "is_online": True,
         "last_seen": now.isoformat(),
         "backup": report.backup,
+        "backup_status": report.backup_status,
+        "tailscale": report.tailscale,
         "client_id": client.id,
         "client_name": client.name,
     }
@@ -255,6 +279,87 @@ async def agent_report(
         "instance_id": instance.id,
         "timestamp": now.isoformat(),
     }
+
+
+
+@router.get("/config")
+async def get_agent_config(authorization: str = Header(None)):
+    """Return add-on configuration for an agent, including Tailscale key and backup settings.
+    
+    The agent calls this on first run to get all config values that shouldn't be
+    entered manually (Tailscale auth key, backup SFTP host, etc.)
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    from database import async_session as AsyncSessionLocal
+    from sqlalchemy import select
+    from models import SubscriptionToken, Client, HomeAssistantInstance
+    
+    async with AsyncSessionLocal() as db:
+        # Validate token
+        result = await db.execute(
+            select(SubscriptionToken).where(
+                SubscriptionToken.token == token,
+                SubscriptionToken.is_active == True
+            )
+        )
+        token_obj = result.scalars().first()
+        if not token_obj:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        client_result = await db.execute(
+            select(Client).where(Client.id == token_obj.client_id)
+        )
+        client = client_result.scalars().first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        # Get or generate Tailscale auth key
+        tailscale_key = client.tailscale_authkey
+        if not tailscale_key:
+            try:
+                from services.tailscale import generate_auth_key
+                from config import get_settings
+                import asyncio
+                settings = get_settings()
+                tailscale_key = await generate_auth_key(settings)
+                if tailscale_key:
+                    client.tailscale_authkey = tailscale_key
+                    await db.flush()
+            except Exception:
+                pass
+        
+        # Get backup settings from platform env
+        import os
+        from config import get_settings
+        settings = get_settings()
+        
+        # Find the instance for this client (most recent)
+        inst_result = await db.execute(
+            select(HomeAssistantInstance).where(
+                HomeAssistantInstance.client_id == client.id
+            ).order_by(HomeAssistantInstance.created_at.desc())
+        )
+        instance = inst_result.scalars().first()
+        
+        return {
+            "client_id": client.id,
+            "client_name": client.name,
+            "subdomain": client.subdomain,
+            "instance_id": instance.id if instance else None,
+            "instance_name": instance.name if instance else client.name,
+            "tailscale_authkey": tailscale_key or "",
+            "backup_enabled": bool(settings.BACKUP_SFTP_HOST),
+            "backup_sftp_host": settings.BACKUP_SFTP_HOST,
+            "backup_sftp_user": settings.BACKUP_SFTP_USER,
+            "backup_sftp_path": settings.BACKUP_SFTP_PATH,
+            "backup_interval_hours": 24,
+            "backup_keep_count": 3,
+            "backup_ssh_key": open("/app/config/backup_key").read() if os.path.isfile("/app/config/backup_key") else "",
+        }
 
 
 @router.get("/status")

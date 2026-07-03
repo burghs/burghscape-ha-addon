@@ -7,21 +7,19 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 import enum
 from database import Base
-
-
 class SubscriptionTier(str, enum.Enum):
     BASIC = "basic"
     STANDARD = "standard"
     PREMIUM = "premium"
-
-
 class ClientStatus(str, enum.Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     PENDING = "pending"
     CANCELLED = "cancelled"
-
-
+class BackupStorageBackend(str, enum.Enum):
+    R2 = "r2"
+    S3 = "s3"
+    LOCAL = "local"
 class Client(Base):
     __tablename__ = "clients"
     id = Column(Integer, primary_key=True, index=True)
@@ -35,9 +33,13 @@ class Client(Base):
     hours_used_this_month = Column(Float, default=0.0)
     cloudflare_tunnel_id = Column(String(255))
     cloudflare_tunnel_token = Column(String(500))
+    # Backup storage configuration
+    backup_storage_backend = Column(SQLEnum(BackupStorageBackend), default=BackupStorageBackend.R2, nullable=False)
+    backup_storage_config = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_seen = Column(DateTime)
+    tailscale_authkey = Column(String(500), nullable=True)
     instances = relationship("HomeAssistantInstance", back_populates="client", cascade="all, delete-orphan")
     support_tickets = relationship("SupportTicket", back_populates="client", cascade="all, delete-orphan")
     backups = relationship("Backup", back_populates="client", cascade="all, delete-orphan")
@@ -51,8 +53,6 @@ class Client(Base):
     @property
     def portal_url(self) -> str:
         return f"https://{self.subdomain}.mybeacon.co.za"
-
-
 class ClientUser(Base):
     __tablename__ = "client_users"
     id = Column(Integer, primary_key=True, index=True)
@@ -66,8 +66,6 @@ class ClientUser(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     client = relationship("Client", back_populates="portal_users")
-
-
 class HomeAssistantInstance(Base):
     __tablename__ = "ha_instances"
     id = Column(Integer, primary_key=True, index=True)
@@ -92,12 +90,11 @@ class HomeAssistantInstance(Base):
     automations_count = Column(Integer, default=0)
     entities_count = Column(Integer, default=0)
     updates_available = Column(JSON, default=list)
+    send_alerts = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime)
     client = relationship("Client", back_populates="instances")
     alerts = relationship("Alert", back_populates="instance", cascade="all, delete-orphan")
-
-
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     id = Column(Integer, primary_key=True, index=True)
@@ -109,24 +106,25 @@ class SupportTicket(Base):
     priority = Column(String(20), default="normal")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     completed_at = Column(DateTime)
     client = relationship("Client", back_populates="support_tickets")
-
-
 class Backup(Base):
     __tablename__ = "backups"
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     filename = Column(String(500))
     size_bytes = Column(Integer)
-    onedrive_item_id = Column(String(255))
+    # R2/S3 storage metadata
+    storage_backend = Column(String(20), default="r2")
+    storage_key = Column(String(500))
+    storage_etag = Column(String(255))
     status = Column(String(50), default="pending")
     error_message = Column(Text)
     started_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
     client = relationship("Client", back_populates="backups")
-
-
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(Integer, primary_key=True, index=True)
@@ -138,8 +136,6 @@ class Alert(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime)
     instance = relationship("HomeAssistantInstance", back_populates="alerts")
-
-
 class MetricSnapshot(Base):
     __tablename__ = "metric_snapshots"
     id = Column(Integer, primary_key=True, index=True)
@@ -149,8 +145,6 @@ class MetricSnapshot(Base):
     disk_percent = Column(Float)
     uptime_seconds = Column(Integer)
     captured_at = Column(DateTime, default=datetime.utcnow)
-
-
 class SubscriptionToken(Base):
     __tablename__ = "subscription_tokens"
     id = Column(Integer, primary_key=True, index=True)

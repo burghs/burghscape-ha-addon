@@ -159,3 +159,48 @@ async def list_admin_users(admin: dict = Depends(get_current_admin)):
             for k, v in ADMIN_USERS.items()
         ]
     }
+
+import os, glob
+from datetime import datetime
+
+@admin_auth_router.get("/backups")
+async def list_admin_backups(admin: dict = Depends(get_current_admin)):
+    """List available server backups for download."""
+    backup_dir = "/backups"
+    backups = []
+    
+    if os.path.isdir(backup_dir):
+        files = sorted(glob.glob(os.path.join(backup_dir, "*.tar.gz")), reverse=True)
+        for f in files[:10]:
+            basename = os.path.basename(f)
+            size = os.path.getsize(f)
+            mtime = os.path.getmtime(f)
+            backups.append({
+                "filename": basename,
+                "name": basename,
+                "size_bytes": size,
+                "created_at": datetime.fromtimestamp(mtime).isoformat(),
+                "date": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
+                "status": "available",
+                "type": "Server Backup (PostgreSQL + Config + Source)",
+                "download_url": f"/api/admin/backups/download/{basename}",
+            })
+    
+    return {"backups": backups}
+
+import os as _os
+from fastapi.responses import FileResponse
+
+@admin_auth_router.get("/backups/download/{filename:path}")
+async def download_backup(filename: str, admin: dict = Depends(get_current_admin)):
+    """Download a specific backup file."""
+    safe_name = _os.path.basename(filename)  # Prevent path traversal
+    filepath = _os.path.join("/backups", safe_name)
+    if not _os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    return FileResponse(
+        filepath,
+        media_type="application/gzip",
+        filename=safe_name,
+        headers={"Content-Disposition": f'attachment; filename={safe_name}'}
+    )

@@ -76,7 +76,10 @@ async def check_stale_instances():
                     for instance, client in stale_instances:
                         instance_id = instance.id
                         if instance_id in _offline_alerted:
-                            continue  # Don't spam alerts
+                            continue
+                        if not instance.send_alerts:
+                            _offline_alerted.add(instance_id)
+                            continue
                         _offline_alerted.add(instance_id)
                         
                         try:
@@ -114,12 +117,50 @@ async def check_stale_instances():
                 else:
                     logger.debug("Stale check: no instances to mark offline")
                     
-                # Clean up _offline_alerted for instances that are back online
-                online_ids = {inst.id for inst, _ in stale_instances} if stale_instances else set()
-                _offline_alerted.difference_update(
-                    iid for iid in list(_offline_alerted) 
-                    if iid not in {inst.id for inst, _ in stale_instances}
+                # Check for recovered instances - send online-back notification
+                online_insts = await session.execute(
+                    select(HomeAssistantInstance, Client)
+                    .join(Client, HomeAssistantInstance.client_id == Client.id)
+                    .where(
+                        HomeAssistantInstance.is_online == True,
+                        HomeAssistantInstance.last_seen >= cutoff,
+                        HomeAssistantInstance.send_alerts == True,
+                    )
                 )
+                recovered_ids = set()
+                for inst, cli in online_insts.all():
+                    rid = inst.id
+                    if rid in _offline_alerted:
+                        logger.info(f"Instance {inst.name} came back online")
+                        recovered_ids.add(rid)
+                        try:
+                            from email_service import send_email
+                            from models import ClientUser
+                            u_result = await session.execute(
+                                select(ClientUser).where(
+                                    ClientUser.client_id == cli.id,
+                                    ClientUser.is_active == True,
+                                )
+                            )
+                            recipients = [u.email for u in u_result.scalars().all()]
+                            recipients.append("admin@mybeacon.co.za")
+                            recipients = list(set(r for r in recipients if r))
+                            ls = inst.last_seen.strftime("%Y-%m-%d %H:%M:%S") if inst.last_seen else "Unknown"
+                            subject = cli.name + " HA System is Back Online"
+                            html = "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;'>"
+                            html += "<h2 style='color:#22c55e;'>System Recovered</h2>"
+                            html += "<p><strong>" + cli.name + "</strong> Home Assistant is back online!</p>"
+                            html += "<div style='background:#f0fdf4;border:1px solid #22c55e;border-radius:8px;padding:15px;margin:15px 0;'>"
+                            html += "<p>HA Version: " + (inst.ha_version or "Unknown") + "</p>"
+                            html += "<p>Last Seen: " + ls + "</p></div></div>"
+                            txt = "RECOVERY: " + cli.name + " HA system is back online. Last seen: " + ls
+                            for r in recipients:
+                                send_email(r, subject, html, txt)
+                        except Exception as e:
+                            logger.error(f"Recovery email failed: {e}")
+
+                # Clean up _offline_alerted
+                _offline_alerted.difference_update(recovered_ids)
                 
         except asyncio.CancelledError:
             logger.info("Stale instance checker cancelled")
