@@ -106,6 +106,56 @@ class HAClient:
     def count_update_entities(self, states: list) -> list[str]:
         return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.") and s.get("state") == "on"]
 
+    async def _get_ha_backup_api(self) -> dict:
+        """Query HA's built-in /api/backups to get real backup status."""
+        backup = {
+            "enabled": False,
+            "last_backup": None,
+            "status": "unknown",
+            "file_count": 0,
+            "total_size_bytes": 0,
+            "last_backup_timestamp": None,
+            "next_backup": None,
+            "error": None,
+        }
+        try:
+            if not self.session:
+                return backup
+            async with self.session.get("/api/backups") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        backup["enabled"] = True
+                        sorted_backups = sorted(data, key=lambda b: b.get("date", ""), reverse=True)
+                        latest = sorted_backups[0]
+                        backup_date = latest.get("date", "")
+                        backup["last_backup"] = backup_date
+                        backup["last_backup_timestamp"] = backup_date
+                        backup["status"] = "ok"
+                        backup["file_count"] = len(sorted_backups)
+                        total = sum(b.get("size", 0) for b in sorted_backups if b.get("size"))
+                        backup["total_size_bytes"] = total
+                        from datetime import datetime
+                        try:
+                            dt = datetime.fromisoformat(backup_date.replace("Z", "+00:00"))
+                            delta = datetime.now().astimezone() - dt
+                            if delta.days > 0:
+                                backup["last_backup"] = f"{delta.days}d ago"
+                            elif delta.seconds > 3600:
+                                backup["last_backup"] = f"{delta.seconds // 3600}h ago"
+                            else:
+                                backup["last_backup"] = f"{delta.seconds // 60}m ago"
+                        except (ValueError, TypeError):
+                            pass
+                elif resp.status == 401:
+                    backup["error"] = "HA token lacks backup access"
+                else:
+                    body = await resp.text()
+                    backup["error"] = f"HTTP {resp.status}: {body[:200]}"
+        except Exception as e:
+            backup["error"] = f"{type(e).__name__}: {str(e)[:150]}"
+        return backup
+
     def get_backup_status(self, states: list) -> dict:
         """Extract OneDrive backup status from HA sensors (lavinir/hassio-onedrive-backup add-on)."""
         backup = {
@@ -355,7 +405,13 @@ class HAClient:
 
             # OneDrive backup status from HA sensors
             if self.config.monitor_backups and isinstance(states, list):
-                report["backup"] = self.get_backup_status(states)
+                ha_backup = await self._get_ha_backup_api()
+                if ha_backup.get("enabled"):
+                    report["backup"] = ha_backup
+                else:
+                    fallback = self.get_backup_status(states)
+                    if fallback.get("enabled"):
+                        report["backup"] = fallback
 
             if isinstance(config_data, dict):
                 report["ha_state"] = config_data.get("state")

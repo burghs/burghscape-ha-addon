@@ -44,7 +44,7 @@ class Config:
         self.monitor_disk = _get_bool_env("MONITOR_DISK", True)
         self.monitor_automations = _get_bool_env("MONITOR_AUTOMATIONS", True)
         self.monitor_updates = _get_bool_env("MONITOR_UPDATES", True)
-        self.monitor_backups = _get_bool_env("MONITOR_BACKUPS", False)
+        self.monitor_backups = _get_bool_env("MONITOR_BACKUPS", True)
         self.monitor_frigate = _get_bool_env("MONITOR_FRIGATE", False)
 
         # Cloudflare Tunnel (fetched from platform automatically)
