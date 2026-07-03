@@ -11,44 +11,15 @@ import time
 from app.config import Config
 from app.ha_client import HAClient
 from app.platform_client import PlatformClient
-from app.backup import run_backup
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("burghscape.agent")
 
 config = Config()
 cloudflared_process = None
 
 
-def is_tailscale_connected() -> dict:
-    """Check if Tailscale is running and connected."""
-    ts_state_dir = "/config/burghscape/tailscale"
-    sock = ts_state_dir + "/tailscaled.sock"
-    if not os.path.exists(sock):
-        return {"connected": False, "ip": None, "hostname": None}
-    try:
-        result = subprocess.run(
-            ["tailscale", "--socket=" + sock, "status", "--json"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode == 0:
-            status = json.loads(result.stdout)
-            self_info = status.get("Self", {})
-            return {
-                "connected": status.get("BackendState") == "Running",
-                "ip": self_info.get("TailscaleIPs", [None])[0] if self_info.get("TailscaleIPs") else None,
-                "hostname": self_info.get("HostName"),
-            }
-    except Exception:
-        pass
-    return {"connected": False, "ip": None, "hostname": None}
-
-
 def get_cloudflared_path() -> str:
-    """Find cloudflared binary."""
     for path in ["/usr/local/bin/cloudflared", "/usr/bin/cloudflared", "cloudflared"]:
         if os.path.isfile(path) or subprocess.run(["which", path], capture_output=True).returncode == 0:
             return path
@@ -56,64 +27,30 @@ def get_cloudflared_path() -> str:
 
 
 def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
-    """Write cloudflared config file and return path."""
     config_dir = "/config/cloudflared"
     os.makedirs(config_dir, exist_ok=True)
-
     import yaml
-    cfg = {
-        "tunnel": tunnel_id,
-        "ingress": [
-            {
-                "hostname": hostname,
-                "service": "http://localhost:8123",
-                "originRequest": {
-                    "noTLSVerify": True
-                }
-            },
-            {"service": "http_status:404"}
-        ]
-    }
-
+    cfg = {"tunnel": tunnel_id, "ingress": [{"hostname": hostname, "service": "http://localhost:8123", "originRequest": {"noTLSVerify": True}}, {"service": "http_status:404"}]}
     config_path = os.path.join(config_dir, "config.yml")
     with open(config_path, "w") as f:
         yaml.dump(cfg, f)
-
     logger.info(f"Cloudflare config written to {config_path}")
     return config_path
 
 
-def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subprocess.Popen:
-    """Start cloudflared tunnel process."""
+def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str):
     global cloudflared_process
-
     if cloudflared_process and cloudflared_process.poll() is None:
         logger.info("cloudflared already running")
         return cloudflared_process
-
     config_path = write_cloudflared_config(tunnel_id, hostname)
-
-    # cloudflared tunnel --config <file> run --token <TOKEN> <TUNNEL_ID>
     cf_bin = get_cloudflared_path()
-    cmd = [
-        cf_bin, "tunnel",
-        "--config", config_path,
-        "run",
-        "--token", tunnel_token,
-        tunnel_id,
-    ]
-
+    cmd = [cf_bin, "tunnel", "--config", config_path, "run", "--token", tunnel_token, tunnel_id]
     logger.info(f"Starting cloudflared: tunnel --config ... run --token ... {tunnel_id} (to {hostname})")
-
     try:
         log_file = open("/config/cloudflared/cloudflared.log", "a")
-        process = subprocess.Popen(
-            cmd,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
+        process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
         logger.info(f"cloudflared started (PID {process.pid})")
-
         time.sleep(5)
         if process.poll() is not None:
             with open("/config/cloudflared/cloudflared.log", "r") as f:
@@ -122,100 +59,58 @@ def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subpr
             for line in last_lines:
                 logger.error(f"  {line.strip()}")
             return None
-
-        return process
-    except FileNotFoundError:
-        logger.error("cloudflared not installed!")
+    except Exception:
+        logger.error("Failed to start cloudflared", exc_info=True)
         return None
+    return process
 
 
 def stop_cloudflared():
-    """Stop cloudflared tunnel process."""
     global cloudflared_process
     if cloudflared_process and cloudflared_process.poll() is None:
         logger.info("Stopping cloudflared...")
         cloudflared_process.terminate()
-        try:
-            cloudflared_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            cloudflared_process.kill()
         cloudflared_process = None
 
 
 def is_cloudflared_healthy() -> bool:
-    """Check if cloudflared is running and connected."""
     global cloudflared_process
-    if cloudflared_process is None:
-        return False
-    if cloudflared_process.poll() is not None:
-        return False
-    return True
+    return cloudflared_process is not None and cloudflared_process.poll() is None
 
 
 async def setup_tunnel(platform: PlatformClient) -> bool:
-    """Fetch tunnel config from platform and start cloudflared."""
-    global cloudflared_process
-
-    logger.info("Fetching tunnel config from platform...")
-    tunnel_cfg = await platform.get_tunnel_config()
-
-    if not tunnel_cfg or not tunnel_cfg.get("tunnel_token"):
-        logger.warning("No tunnel config available from platform")
-        return False
-
-    tunnel_token = tunnel_cfg["tunnel_token"]
-    tunnel_id = tunnel_cfg.get("tunnel_id", "")
-    hostname = tunnel_cfg.get("hostname", "")
-
-    logger.info(f"Tunnel config: id={tunnel_id}, hostname={hostname}")
-
     try:
-        cf_bin = get_cloudflared_path()
-        result = subprocess.run([cf_bin, "--version"], capture_output=True, text=True)
-        logger.info(f"cloudflared: {result.stdout.strip()}")
-    except FileNotFoundError:
-        logger.error("cloudflared not found in container!")
+        tunnel_config = await platform.get_tunnel_config()
+        if not tunnel_config or not tunnel_config.get("token"):
+            logger.warning("No tunnel config received from platform")
+            return False
+        logger.info(f"Tunnel config received: {tunnel_config.get(hostname)}")
+        global cloudflared_process
+        process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], tunnel_config["hostname"])
+        cloudflared_process = process
+        return process is not None
+    except Exception as e:
+        logger.error(f"Failed to setup tunnel: {e}")
         return False
-
-    cloudflared_process = start_cloudflared(tunnel_token, tunnel_id, hostname)
-    return cloudflared_process is not None
 
 
 async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
-    """Collect data from HA and send to platform."""
     logger.info("Collecting HA report...")
     report = await ha.get_full_report()
-
     report["tunnel_running"] = is_cloudflared_healthy()
-
-    backup_info = report.get("backup", {})
-    backup_status = backup_info.get("status", "n/a") if backup_info.get("enabled") else "disabled"
-    logger.info(
-        "Report: online=%s entities=%s version=%s tunnel=%s backup=%s",
-        report.get("online"),
-        report.get("entities_count", "?"),
-        report.get("ha_version", "?"),
-        report.get("tunnel_running"),
-        backup_status,
-    )
+    logger.info("Report: online=%s entities=%s version=%s tunnel=%s",
+        report.get("online"), report.get("entities_count", "?"), report.get("ha_version", "?"),
+        report.get("tunnel_running"))
     result = await platform.send_heartbeat(report)
     logger.info("Platform response: %s", result)
-    return report
+    return result
 
 
 async def main_loop():
-    """Main loop: collect and report at configured interval."""
     logger.info("Burghscape Agent starting")
     logger.info("Platform: %s", config.platform_url)
     logger.info("Instance: %s", config.instance_name)
     logger.info("Heartbeat: every %ss", config.heartbeat_interval)
-
-    if config.backup_enabled:
-        logger.info("Client backup enabled: every %sh → %s@%s:%s",
-                     config.backup_interval_hours,
-                     config.backup_sftp_user,
-                     config.backup_sftp_host,
-                     config.backup_sftp_path)
 
     def handle_signal(sig, frame):
         logger.info("Received signal %s, shutting down...", sig)
@@ -226,57 +121,31 @@ async def main_loop():
     signal.signal(signal.SIGINT, handle_signal)
 
     tunnel_setup_done = False
-    last_backup_ts = 0
 
     while True:
         try:
             async with HAClient(config) as ha, PlatformClient(config) as platform:
                 if not tunnel_setup_done:
                     tunnel_setup_done = await setup_tunnel(platform)
-
                 report = await run_once(ha, platform)
                 if not report.get("online"):
                     logger.warning("HA appears offline, will retry...")
-
-                # Check if backup is due
-                if config.backup_enabled and config.backup_sftp_host:
-                    now = time.time()
-                    interval_secs = config.backup_interval_hours * 3600
-                    if now - last_backup_ts >= interval_secs:
-                        logger.info("Client backup is due, starting...")
-                        backup_result = await run_backup(config)
-                        if backup_result.get("success"):
-                            last_backup_ts = now
-                            logger.info("Client backup completed successfully (%d bytes)", backup_result.get("size_bytes", 0))
-                        else:
-                            logger.warning("Client backup failed: %s", backup_result.get("error", "unknown"))
-                    else:
-                        hours_until = (interval_secs - (now - last_backup_ts)) / 3600
-                        if hours_until < 1:
-                            logger.info("Backup due in %d minutes", int(hours_until * 60))
-
-                # Include backup status in report
-                report["backup_status"] = {
-                    "enabled": config.backup_enabled,
-                    "last_backup": last_backup_ts,
-                    "interval_hours": config.backup_interval_hours,
-                    "keep_count": config.backup_keep_count,
-                }
-
-                # Include Tailscale status
-                report["tailscale"] = is_tailscale_connected()
-
+                if not is_cloudflared_healthy():
+                    logger.warning("cloudflared tunnel is down, attempting restart...")
+                    tunnel_setup_done = False
         except Exception as e:
-            logger.error("Error in main loop: %s", e, exc_info=True)
-
-        if not is_cloudflared_healthy():
-            if tunnel_setup_done:
-                logger.warning("cloudflared died, will restart on next cycle...")
-                tunnel_setup_done = False
-
+            logger.error(f"Error in main loop: {e}", exc_info=True)
         logger.info("Sleeping %ss until next report...", config.heartbeat_interval)
         await asyncio.sleep(config.heartbeat_interval)
 
 
+def main():
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        stop_cloudflared()
+
+
 if __name__ == "__main__":
-    asyncio.run(main_loop())
+    main()

@@ -23,22 +23,22 @@ def _get_bool_env(var_name, default):
 
 class Config:
     """Configuration loaded from add-on options (set by HA)."""
-    
+
     def __init__(self):
         # HA Core connection - use supervisor API proxy
         self.ha_url = os.getenv("HA_URL", "http://localhost:8123/")
         self.ha_token = os.getenv("HA_TOKEN", "")
-        
+
         # Platform connection
         self.platform_url = os.getenv("PLATFORM_URL", "").rstrip("/")
         self.subscription_token = os.getenv("SUBSCRIPTION_TOKEN", "")
-        
+
         # Instance settings
         self.instance_name = os.getenv("INSTANCE_NAME", "My Home Assistant")
         self.ip_address = os.getenv("IP_ADDRESS", "")
         self.burghscape_version = os.getenv("VERSION", "")
         self.heartbeat_interval = _get_int_env("HEARTBEAT_INTERVAL", 300)
-        
+
         # Monitoring toggles
         self.monitor_entities = _get_bool_env("MONITOR_ENTITIES", True)
         self.monitor_disk = _get_bool_env("MONITOR_DISK", True)
@@ -46,28 +46,21 @@ class Config:
         self.monitor_updates = _get_bool_env("MONITOR_UPDATES", True)
         self.monitor_backups = _get_bool_env("MONITOR_BACKUPS", False)
         self.monitor_frigate = _get_bool_env("MONITOR_FRIGATE", False)
-        
+
         # Cloudflare Tunnel (fetched from platform automatically)
         self.cloudflare_tunnel_token = os.getenv("CLOUDFLARE_TUNNEL_TOKEN", "")
         self.cloudflare_tunnel_id = ""
         self.cloudflare_account_tag = ""
         self.cloudflare_tunnel_config = ""
-        
+
         # Data retention
         self.report_days = _get_int_env("REPORT_DAYS", 30)
 
-        # Client backup (SFTP to Burghscape VM)
+        # Client backup (HTTPS to Platform -> R2)
         self.backup_enabled = _get_bool_env("BACKUP_ENABLED", False)
         self.backup_interval_hours = _get_int_env("BACKUP_INTERVAL_HOURS", 24)
-        self.backup_sftp_host = os.getenv("BACKUP_SFTP_HOST", "")
-        self.backup_sftp_user = os.getenv("BACKUP_SFTP_USER", "kenny")
-        self.backup_sftp_path = os.getenv("BACKUP_SFTP_PATH", "/home/kenny/client-backups")
-        self.backup_ssh_key_path = os.getenv("BACKUP_SSH_KEY", "/config/burghscape/backup_key")
-        self.backup_keep_count = _get_int_env("BACKUP_KEEP_COUNT", 3)
+        self.backup_max_part_size_mb = _get_int_env("BACKUP_MAX_PART_SIZE_MB", 100)
 
-        # Tailscale (backup transport + remote access)
-        self.tailscale_authkey = os.getenv("TAILSCALE_AUTHKEY", "")
-    
     def validate(self):
         """Validate configuration."""
         errors = []
@@ -78,7 +71,7 @@ class Config:
         if not self.ha_url:
             errors.append("HA_URL is required")
         return errors
-    
+
     def __repr__(self):
         return (
             f"Config(platform_url={self.platform_url}, "

@@ -33,74 +33,14 @@ def load_config():
             "report_days": "REPORT_DAYS",
             "backup_enabled": "BACKUP_ENABLED",
             "backup_interval_hours": "BACKUP_INTERVAL_HOURS",
-            "backup_sftp_host": "BACKUP_SFTP_HOST",
-            "backup_sftp_user": "BACKUP_SFTP_USER",
-            "backup_sftp_path": "BACKUP_SFTP_PATH",
-            "tailscale_authkey": "TAILSCALE_AUTHKEY",
+            "backup_max_part_size_mb": "BACKUP_MAX_PART_SIZE_MB",
         }
 
         for key, env_var in env_map.items():
             if key in options and options[key] not in (None, ""):
                 os.environ[env_var] = str(options[key])
-                if key == "tailscale_authkey":
-                    print(f"  {env_var}=***")
-                else:
-                    print(f"  {env_var}={options[key]}")
     else:
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
-
-
-def write_backup_ssh_key():
-    """Write backup SSH private key from config to file for paramiko."""
-    key_path = "/config/burghscape/backup_key"
-    # Check if key already written (env var set by env_map or already exists)
-    if os.path.isfile(key_path):
-        os.chmod(key_path, 0o600)
-        print("Backup SSH key already exists at %s", key_path)
-        return
-
-    # Get key from options.json directly (not in env_map to avoid printing it)
-    if os.path.isfile(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            options = json.load(f)
-        ssh_key = options.get("backup_ssh_key", "")
-        if ssh_key:
-            os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            with open(key_path, "w") as f:
-                f.write(ssh_key)
-            os.chmod(key_path, 0o600)
-            print("Backup SSH key written to %s" % key_path)
-            os.environ["BACKUP_SSH_KEY"] = key_path
-
-
-def get_tunnel_hostname():
-    """Get tunnel hostname from platform API."""
-    import urllib.request
-    import json as json_mod
-    platform_url = os.environ.get("PLATFORM_URL", "https://api.mybeacon.co.za")
-    instance_name = os.environ.get("INSTANCE_NAME", "")
-    subscription_token = os.environ.get("SUBSCRIPTION_TOKEN", "")
-    
-    # Try platform API first
-    try:
-        url = f"{platform_url.rstrip('/')}/api/tunnels/config"
-        req = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {subscription_token}",
-        })
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json_mod.loads(resp.read())
-            hostname = data.get("hostname", "")
-            if hostname:
-                return hostname
-    except Exception:
-        pass
-    
-    # Fallback: derive from instance name
-    instance = instance_name.lower().replace(" ", "-")
-    if instance:
-        return f"{instance}.mybeacon.co.za"
-    return None
-
 
 def ensure_ha_trusted_proxies():
     """Add trusted_proxies and external_url to HA configuration.yaml if not present."""
@@ -111,11 +51,9 @@ def ensure_ha_trusted_proxies():
     with open(HA_CONFIG_PATH, "r") as f:
         content = f.read()
     
-    # Get the tunnel hostname
-    hostname = get_tunnel_hostname()
+    hostname = os.environ.get("TUNNEL_HOSTNAME", "")
     external_url = f"https://{hostname}" if hostname else None
     
-    # Check if already configured
     already_has_trusted = "use_x_forwarded_for" in content and "trusted_proxies" in content
     already_has_external = external_url and external_url in content
     
@@ -127,252 +65,60 @@ def ensure_ha_trusted_proxies():
     
     if not already_has_trusted:
         print("Adding trusted_proxies to HA configuration.yaml...")
-        http_block = """
-http:
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 127.0.0.1
-    - ::1
-    - 172.30.32.0/23
-    - 10.0.0.0/8
-    - 192.168.0.0/16
-"""
+        http_block = os.linesep.join([
+            "",
+            "http:",
+            "  use_x_forwarded_for: true",
+            "  trusted_proxies:",
+            "    - 127.0.0.1",
+            "    - ::1",
+            "    - 172.30.32.0/23",
+            "    - 10.0.0.0/8",
+            "    - 192.168.0.0/16",
+        ]) + os.linesep
         with open(HA_CONFIG_PATH, "a") as f:
             f.write(http_block)
         changes.append("trusted_proxies")
     
     if not already_has_external and external_url:
         print(f"Adding external_url ({external_url}) to HA configuration.yaml...")
-        # Add external_url to existing homeassistant block or create new one
         if "homeassistant:" in content:
-            # Insert external_url right after the "homeassistant:" line
-            lines = content.split("\n")
+            nl = chr(10)
+            lines = content.split(nl)
             new_lines = []
             for line in lines:
                 new_lines.append(line)
                 if line.strip() == "homeassistant:":
-                    new_lines.append(f'  external_url: "{external_url}"')
+                    new_lines.append('  external_url: "' + external_url + '"')
             with open(HA_CONFIG_PATH, "w") as f:
-                f.write("\n".join(new_lines))
+                f.write(nl.join(new_lines))
         else:
-            ha_block = f"""
-homeassistant:
-  external_url: "{external_url}"
-"""
+            ha_block = os.linesep.join([
+                "",
+                "homeassistant:",
+                "  external_url: \"" + external_url + "\"",
+            ]) + os.linesep
             with open(HA_CONFIG_PATH, "a") as f:
                 f.write(ha_block)
         changes.append("external_url")
     
     if changes:
-        print(f"Added {', '.join(changes)}. HA restart required to take effect.")
-    
-    # Try to restart HA via supervisor API (multiple URLs for host_network)
-    try:
-        import urllib.request
-        supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
-        if os.path.isfile("/run/s6/container_environment/SUPERVISOR_TOKEN"):
-            with open("/run/s6/container_environment/SUPERVISOR_TOKEN") as f:
-                supervisor_token = f.read().strip()
-        
-        if supervisor_token:
-            restarted = False
-            for url in ["http://supervisor/homeassistant/restart", "http://localhost:8080/homeassistant/restart"]:
-                try:
-                    req = urllib.request.Request(
-                        url,
-                        method="POST",
-                        headers={"Authorization": f"Bearer {supervisor_token}"}
-                    )
-                    urllib.request.urlopen(req, timeout=10)
-                    print(f"HA restart triggered via {url}")
-                    restarted = True
-                    break
-                except Exception:
-                    continue
-            if not restarted:
-                print("Could not auto-restart HA via supervisor")
-                print("Please restart HA manually for changes to take effect")
-    except Exception as e:
-        print(f"Could not auto-restart HA: {e}")
-        print("Please restart HA manually for changes to take effect")
+        print(f"Added {', '.join(changes)} to HA configuration. Restart may be needed.")
 
-
-def start_tailscale(authkey: str):
-    """Start Tailscale daemon and join the Tailnet."""
-    ts_state_dir = "/config/burghscape/tailscale"
-    os.makedirs(ts_state_dir, exist_ok=True)
-
-    # Check if already authenticated
-    try:
-        result = subprocess.run(
-            ["tailscale", "status", "--json"],
-            capture_output=True, text=True, timeout=10,
-            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
-        )
-        if result.returncode == 0:
-            status = json.loads(result.stdout)
-            if status.get("BackendState") == "Running":
-                print("Tailscale already running and connected")
-                return
-    except Exception:
-        pass
-
-    # Start tailscaled daemon
-    print("Starting Tailscale...")
-    try:
-        subprocess.Popen(
-            [
-                "tailscaled",
-                "--state=" + ts_state_dir + "/tailscaled.state",
-                "--socket=" + ts_state_dir + "/tailscaled.sock",
-                "--tun=userspace-networking",
-            ],
-            stdout=open("/config/burghscape/tailscale/tailscaled.log", "a"),
-            stderr=subprocess.STDOUT,
-            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
-        )
-    except FileNotFoundError:
-        print("ERROR: tailscaled not found — Tailscale not installed?")
-        return
-
-    # Wait for daemon to start
-    time.sleep(3)
-
-    # Join Tailnet
-    print("Joining Tailnet...")
-    try:
-        result = subprocess.run(
-            [
-                "tailscale", "--socket=" + ts_state_dir + "/tailscaled.sock",
-                "up", "--auth-key=" + authkey, "--accept-routes",
-                "--hostname=burghscape-" + os.environ.get("INSTANCE_NAME", "agent").lower().replace(" ", "-"),
-            ],
-            capture_output=True, text=True, timeout=30,
-            env={**os.environ, "TS_STATE_DIR": ts_state_dir},
-        )
-        if result.returncode == 0:
-            print("Tailscale connected successfully")
-        else:
-            print(f"Tailscale join failed: {result.stderr.strip()}")
-    except Exception as e:
-        print(f"Tailscale error: {e}")
-
-
-def fetch_platform_config():
-    """Fetch additional config from platform (Tailscale key, backup settings).
-    
-    On first run, the agent may not have all settings in options.json.
-    This fetches them from the platform using the subscription token.
-    """
-    platform_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
-    token = os.environ.get("SUBSCRIPTION_TOKEN", "")
-
-    if not platform_url or not token:
-        return
-
-    try:
-        import urllib.request
-        url = platform_url + "/api/agent/config"
-        req = urllib.request.Request(url)
-        req.add_header("Authorization", "Bearer " + token)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            import json
-            config = json.loads(resp.read())
-
-        # Set environment variables from platform config
-        env_map = {
-            "tailscale_authkey": "TAILSCALE_AUTHKEY",
-            "backup_sftp_host": "BACKUP_SFTP_HOST",
-            "backup_sftp_user": "BACKUP_SFTP_USER",
-            "backup_sftp_path": "BACKUP_SFTP_PATH",
-            "backup_interval_hours": "BACKUP_INTERVAL_HOURS",
-            "backup_keep_count": "BACKUP_KEEP_COUNT",
-        }
-
-        for cfg_key, env_var in env_map.items():
-            val = config.get(cfg_key)
-            if val and str(val):
-                os.environ[env_var] = str(val)
-                if cfg_key != "tailscale_authkey":
-                    print(f"  Platform config: {env_var}={val}")
-                else:
-                    print(f"  Platform config: {env_var}=***")
-
-        # Handle backup_enabled
-        if config.get("backup_enabled"):
-            os.environ["BACKUP_ENABLED"] = "true"
-            print("  Platform config: BACKUP_ENABLED=true")
-
-        # Handle instance_name from platform
-        instance_name = config.get("instance_name")
-        if instance_name and not os.environ.get("INSTANCE_NAME"):
-            os.environ["INSTANCE_NAME"] = instance_name
-            print(f"  Platform config: INSTANCE_NAME={instance_name}")
-
-        print("Platform config fetched successfully")
-    except Exception as e:
-        print(f"Warning: Could not fetch platform config: {e}")
-
+def get_tunnel_hostname():
+    """Get tunnel hostname from config or env."""
+    return os.environ.get("INSTANCE_NAME", "") + ".mybeacon.co.za"
 
 def main():
-    load_config()
-
-    # Fetch additional config from platform (Tailscale key, backup settings)
-    fetch_platform_config()
-
-    # Write backup SSH key if configured
-    write_backup_ssh_key()
-
-    # Configure HA trusted proxies for Cloudflare tunnel
-    ensure_ha_trusted_proxies()
-    
-    # Ensure HA_TOKEN is set (from env_map or s6 container env)
-    if not os.environ.get("HA_TOKEN"):
-        ha_token_path = "/run/s6/container_environment/HA_TOKEN"
-        if os.path.isfile(ha_token_path):
-            with open(ha_token_path) as f:
-                ha_token = f.read().strip()
-            if ha_token:
-                os.environ["HA_TOKEN"] = ha_token
-                print("HA_TOKEN loaded from s6 container env")
-    
-    if os.environ.get("HA_TOKEN"):
-        print("HA_TOKEN: configured (length=%d)" % len(os.environ["HA_TOKEN"]))
-    else:
-        print("WARNING: HA_TOKEN not set — HA API calls will fail")
-    
-    # Set HA URL for API calls
-    os.environ["HA_URL"] = "http://localhost:8123/"
-    
-    # Verify cloudflared
     try:
-        result = subprocess.run(["cloudflared", "--version"], capture_output=True, text=True)
-        print(f"cloudflared: {result.stdout.strip()}")
-    except FileNotFoundError:
-        print("ERROR: cloudflared not found!")
-        sys.exit(1)
-    
-    print(f"Platform: {os.environ.get('PLATFORM_URL', 'not set')}")
-    print(f"Instance: {os.environ.get('INSTANCE_NAME', 'My Home Assistant')}")
-    print(f"Heartbeat: every {os.environ.get('HEARTBEAT_INTERVAL', '300')}s")
-
-    # Start Tailscale for backup SFTP + remote access
-    tailscale_authkey = os.environ.get("TAILSCALE_AUTHKEY", "")
-    if tailscale_authkey:
-        start_tailscale(tailscale_authkey)
-    else:
-        print("TAILSCALE_AUTHKEY not set — Tailscale disabled (backups via SFTP unavailable)")
-
-    # Launch the agent
-    os.chdir("/app")
-    sys.path.insert(0, "/app")
-    
-    try:
-        from app.main import main_loop
-        import asyncio
-        asyncio.run(main_loop())
+        load_config()
+        ensure_ha_trusted_proxies()
+        print("Starting agent...")
+        import subprocess
+        result = subprocess.run([sys.executable, "-m", "app.main"], cwd="/app")
+        sys.exit(result.returncode)
     except Exception as e:
-        print(f"FATAL ERROR: {e}")
+        print(f"Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)
 
