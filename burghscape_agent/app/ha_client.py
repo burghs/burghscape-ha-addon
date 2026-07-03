@@ -107,7 +107,11 @@ class HAClient:
         return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.") and s.get("state") == "on"]
 
     async def _get_ha_backup_api(self) -> dict:
-        """Query HA's built-in /api/backups to get real backup status."""
+        """Check HA backup status via filesystem (/backup/ dir) with API fallback.
+        
+        Primary: list files in /backup/ directory (most reliable, no auth needed).
+        Fallback: try /api/hassio/backups via HA API proxy.
+        """
         backup = {
             "enabled": False,
             "last_backup": None,
@@ -118,63 +122,148 @@ class HAClient:
             "next_backup": None,
             "error": None,
         }
+        
+        # --- Method 1: Filesystem check (most reliable) ---
         try:
-            if not self.session:
-                return backup
-            # HA proxy -> supervisor API (works with regular HA token)
-            # Try hassio proxy first (most reliable for addons)
-            backup_urls = ["/api/hassio/backups", "/api/backups"]
-            resp = None
-            for url in backup_urls:
-                try:
-                    async with self.session.get(url) as r:
-                        if r.status != 404:
-                            resp = r
-                            break
-                except Exception:
-                    continue
-            if resp is None:
-                return backup
-            async with resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # hassio proxy wraps in {"data": {"backups": [...]}}
-                    if isinstance(data, dict) and "data" in data:
-                        inner = data["data"]
-                        if isinstance(inner, dict) and "backups" in inner:
-                            data = inner["backups"]
-                        elif isinstance(inner, list):
-                            data = inner
-                    if isinstance(data, list) and len(data) > 0:
-                        backup["enabled"] = True
-                        sorted_backups = sorted(data, key=lambda b: b.get("date", ""), reverse=True)
-                        latest = sorted_backups[0]
-                        backup_date = latest.get("date", "")
-                        backup["last_backup"] = backup_date
-                        backup["last_backup_timestamp"] = backup_date
-                        backup["status"] = "ok"
-                        backup["file_count"] = len(sorted_backups)
-                        total = sum(b.get("size", 0) for b in sorted_backups if b.get("size"))
-                        backup["total_size_bytes"] = total
-                        from datetime import datetime
-                        try:
-                            dt = datetime.fromisoformat(backup_date.replace("Z", "+00:00"))
-                            delta = datetime.now().astimezone() - dt
-                            if delta.days > 0:
-                                backup["last_backup"] = f"{delta.days}d ago"
-                            elif delta.seconds > 3600:
-                                backup["last_backup"] = f"{delta.seconds // 3600}h ago"
-                            else:
-                                backup["last_backup"] = f"{delta.seconds // 60}m ago"
-                        except (ValueError, TypeError):
-                            pass
-                elif resp.status == 401:
-                    backup["error"] = "HA token lacks backup access"
-                else:
-                    body = await resp.text()
-                    backup["error"] = f"HTTP {resp.status}: {body[:200]}"
+            import os, glob, time
+            backup_dir = "/backup"
+            if os.path.isdir(backup_dir):
+                tar_files = sorted(
+                    [f for f in glob.glob(os.path.join(backup_dir, "*.tar")) if os.path.isfile(f)],
+                    key=os.path.getmtime,
+                    reverse=True
+                )
+                if tar_files:
+                    backup["enabled"] = True
+                    backup["file_count"] = len(tar_files)
+                    total_size = sum(os.path.getsize(f) for f in tar_files)
+                    backup["total_size_bytes"] = total_size
+                    
+                    # Most recent backup
+                    latest = tar_files[0]
+                    mtime = os.path.getmtime(latest)
+                    now = time.time()
+                    delta_secs = now - mtime
+                    
+                    if delta_secs < 60:
+                        backup["last_backup"] = "Just now"
+                    elif delta_secs < 3600:
+                        backup["last_backup"] = f"{int(delta_secs // 60)}m ago"
+                    elif delta_secs < 86400:
+                        backup["last_backup"] = f"{int(delta_secs // 3600)}h ago"
+                    elif delta_secs < 604800:
+                        backup["last_backup"] = f"{int(delta_secs // 86400)}d ago"
+                    else:
+                        import datetime
+                        dt = datetime.datetime.fromtimestamp(mtime)
+                        backup["last_backup"] = dt.strftime("%Y-%m-%d")
+                    
+                    backup["last_backup_timestamp"] = mtime
+                    backup["status"] = "ok"
+                    
+                    # Estimate next backup (assume daily)
+                    next_ts = mtime + 86400
+                    if next_ts > now:
+                        remaining = next_ts - now
+                        if remaining < 3600:
+                            backup["next_backup"] = f"In {int(remaining // 60)}m"
+                        else:
+                            backup["next_backup"] = f"In {int(remaining // 3600)}h"
+                    else:
+                        backup["next_backup"] = "Overdue"
+                    
+                    import logging as _log
+                    _log = _log.getLogger("burghscape.agent")
+                    _log.info("Backup: found %d tar files in %s, latest %s", len(tar_files), backup_dir, backup["last_backup"])
+                    return backup
+            else:
+                backup["error"] = f"Backup directory {backup_dir} not found"
         except Exception as e:
-            backup["error"] = f"{type(e).__name__}: {str(e)[:150]}"
+            import logging as _log
+            _log = _log.getLogger("burghscape.agent")
+            _log.warning("Backup filesystem check failed: %s", e)
+            backup["error"] = f"FS error: {e}"
+        
+        # --- Method 2: Hassio API proxy fallback ---
+        if self.session:
+            try:
+                async with self.session.get("/api/hassio/backups") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        inner = data
+                        if isinstance(data, dict) and "data" in data:
+                            inner = data["data"]
+                        backups_list = inner.get("backups", []) if isinstance(inner, dict) else (inner if isinstance(inner, list) else [])
+                        
+                        if backups_list:
+                            backup["enabled"] = True
+                            backup["status"] = "ok"
+                            import logging as _log2
+                            _log2 = _log2.getLogger("burghscape.agent")
+                            _log2.info("Backup: found %d backups via hassio API", len(backups_list))
+                            return self._parse_backup_list(backups_list)
+            except Exception:
+                pass
+        
+        # --- Method 3: Try raw API endpoint (old HA versions) ---
+        if self.session:
+            try:
+                async with self.session.get("/api/backups") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            backup["enabled"] = True
+                            return self._parse_backup_list(data)
+            except Exception:
+                pass
+        
+        return backup
+
+    def _parse_backup_list(self, backups_list: list) -> dict:
+        """Parse a list of backup dicts into our standard backup format."""
+        backup = {
+            "enabled": True,
+            "last_backup": None,
+            "status": "ok",
+            "file_count": len(backups_list),
+            "total_size_bytes": 0,
+            "last_backup_timestamp": None,
+            "next_backup": None,
+            "error": None,
+        }
+        from datetime import datetime, timezone, timedelta
+        
+        # Sort by date descending
+        sorted_bk = sorted(backups_list, key=lambda b: b.get("date", ""), reverse=True)
+        latest = sorted_bk[0]
+        
+        total = sum(b.get("size", 0) for b in sorted_bk if b.get("size"))
+        backup["total_size_bytes"] = total
+        
+        backup_date = latest.get("date", "")
+        if backup_date:
+            backup["last_backup_timestamp"] = backup_date
+            try:
+                dt = datetime.fromisoformat(backup_date.replace("Z", "+00:00"))
+                delta = datetime.now().astimezone() - dt
+                if delta.days > 0:
+                    backup["last_backup"] = f"{delta.days}d ago"
+                elif delta.seconds > 3600:
+                    backup["last_backup"] = f"{delta.seconds // 3600}h ago"
+                else:
+                    backup["last_backup"] = f"{delta.seconds // 60}m ago"
+                
+                # Next backup estimate (daily)
+                next_dt = dt + timedelta(days=1)
+                if next_dt > datetime.now().astimezone():
+                    remaining = (next_dt - datetime.now().astimezone()).total_seconds()
+                    if remaining < 3600:
+                        backup["next_backup"] = f"In {int(remaining // 60)}m"
+                    else:
+                        backup["next_backup"] = f"In {int(remaining // 3600)}h"
+            except (ValueError, TypeError):
+                backup["last_backup"] = str(backup_date)[:19]
+        
         return backup
 
     def get_backup_status(self, states: list) -> dict:
@@ -425,7 +514,7 @@ class HAClient:
             report.update(sys_stats)
 
             # OneDrive backup status from HA sensors
-            if self.config.monitor_backups and isinstance(states, list):
+            if isinstance(states, list):
                 ha_backup = await self._get_ha_backup_api()
                 if ha_backup.get("enabled"):
                     report["backup"] = ha_backup
