@@ -1,0 +1,53 @@
+# Changelog
+
+## v0.2.25 (2026-07-03)
+
+### ✨ New Feature: Real HA Backup Status
+- Addon now queries Home Assistant's built-in /api/backups API to report real backup data
+- Shows: last backup time, file count, total size, backup status
+- Falls back to entity-based detection if /api/backups is unavailable
+- Backup monitoring enabled by default (monitor_backups: true)
+
+### 🎨 Portal Layout Improvements
+- Monthly Hours + Support Tickets + System Report + HA News grouped together in a compact 2x2 grid
+- Backup Status moved to its own section at the bottom
+- Cleaner, more efficient use of space
+
+### 🔧 Platform Changes
+- Stores real backup data from HA API on each heartbeat
+- Portal displays "Last Backup" with relative time (e.g. 2h ago, 3d ago)
+- Email alerts and PDF report generation continue to work
+
+## v0.2.24 (2026-07-01)
+
+### 🔧 Fixes
+- Fixed supervisor env var passing so HA_TOKEN is properly set
+- Portal now automatically detects logged-in user's client
+
+## v0.2.23 (2026-07-01)
+
+### 🚀 Features
+- R2 backup storage integration
+- Entrypoint fixes for supervisor API fallback
+- Cloudflare tunnel auto-config from platform
+
+## v0.2.22 (2026-06-29)
+
+### ✨ Features
+- Tailscale auto-join on startup (auth key from platform)
+- Client backup: HA backup via SFTP to VM over Tailscale
+- Retention: keeps last 3 backups per client
+- Platform config fetch
+- Heartbeat includes tailscale status + backup_status
+- HA trusted_proxies + external_url auto-config
+
+## v0.2.21 (2026-06-28)
+
+### 🚀 Initial Release
+- Basic agent heartbeat with HA version, entities, automations
+- Cloudflare tunnel management
+- Platform dashboard integration
+- Welcome emails with credentials
+- Online/offline alert emails
+- PDF system report generation
+- Per-instance alert toggles
