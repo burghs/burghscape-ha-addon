@@ -149,7 +149,10 @@ PORTAL_HTML = """<!DOCTYPE html>
                     </div>
                 </div>
             </div>
+        </div>
 
+        <!-- System Resources + Backup Status -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- System Stats -->
             <div class="card rounded-2xl p-6">
                 <h2 class="text-lg font-semibold text-white mb-4">System Resources</h2>
@@ -183,32 +186,28 @@ PORTAL_HTML = """<!DOCTYPE html>
                     </div>
                 </div>
             </div>
-        </div>
 
-
-        <!-- Backup Status -->
-        <div class="card rounded-2xl p-6 mb-6">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-semibold text-white">Backup Status</h2>
-                <span class="text-xs px-3 py-1 rounded-full {backup_badge_class}">{backup_badge_text}</span>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <p class="text-sm text-gray-500">Last Backup</p>
-                    <p class="text-white font-medium mt-1">{last_backup_str}</p>
+            <!-- Backup Status -->
+            <div class="card rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-white">Backup Status</h2>
+                    <span class="text-xs px-3 py-1 rounded-full {backup_badge_class}">{backup_badge_text}</span>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">Next Backup</p>
-                    <p class="text-white font-medium mt-1">{next_backup_str}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">OneDrive Sync</p>
-                    <p class="font-medium mt-1 {backup_sync_class}">{backup_sync_text}</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm text-gray-500">Last Backup</p>
+                        <p class="text-white font-medium mt-1">{last_backup_str}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500">Next Backup</p>
+                        <p class="text-white font-medium mt-1">{next_backup_str}</p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Monthly Hours + Support Tickets Row -->
+
+        <!-- Monthly Hours + Support Tickets + System Report + HA News (2x2 grid) -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- Monthly Hours -->
             <div class="card rounded-2xl p-6">
@@ -245,25 +244,27 @@ PORTAL_HTML = """<!DOCTYPE html>
                 </div>
                 <div id="tickets-list" class="space-y-2 max-h-48 overflow-y-auto">{tickets_html}</div>
             </div>
-        </div>
 
-        <!-- Download Report -->
-        <div class="card rounded-2xl p-6 mb-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h2 class="text-lg font-semibold text-white">System Report</h2>
-                    <p class="text-sm text-gray-500 mt-1">Download a full PDF report of your Home Assistant system</p>
+            <!-- System Report (compact card in grid) -->
+            <div class="card rounded-2xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">System Report</h2>
+                        <p class="text-sm text-gray-500 mt-1">Full PDF report of your HA system</p>
+                    </div>
+                    <a href="/api/portal/report" target="_blank"
+                       class="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600 text-white px-4 py-2 rounded-xl transition shadow-lg shadow-purple-500/20 text-sm font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        Download PDF
+                    </a>
                 </div>
-                <a href="/api/portal/report" target="_blank"
-                   class="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600 text-white px-5 py-2.5 rounded-xl transition shadow-lg shadow-purple-500/20 text-sm font-medium">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    Download PDF
-                </a>
             </div>
+
+            <!-- HA Release Notes (compact card in grid) -->
+            {ha_news_section}
         </div>
 
-        <!-- HA Release Notes -->
-        {ha_news_section}
+
     </div>
 
     <script>
@@ -1056,21 +1057,41 @@ async def client_portal(request: Request):
         client_reports = {k: v for k, v in agent_reports.items() if v.get("client_id") == client.id}
         if client_reports:
             report = list(client_reports.values())[0]
-            bs = report.get("backup_status", {})
+            # Addon sends backup data in 'backup' key (or 'backup_status' for backward compat)
+            bs = report.get("backup", {}) or report.get("backup_status", {})
             if bs and bs.get("enabled"):
                 backup_enabled = True
-                last_ts = bs.get("last_backup")
-                if last_ts:
+                last_backup_raw = bs.get("last_backup") or bs.get("last_backup_timestamp")
+                if last_backup_raw:
                     from datetime import datetime as _dt
-                    delta = _dt.now() - _dt.fromtimestamp(last_ts)
-                    if delta.days > 0:
-                        last_backup_str = "{} day(s) ago".format(delta.days)
-                    elif delta.seconds > 3600:
-                        last_backup_str = "{}h ago".format(delta.seconds // 3600)
-                    else:
-                        last_backup_str = "{}m ago".format(delta.seconds // 60)
-                interval = bs.get("interval_hours", 24)
-                next_backup_str = "In {}h".format(interval)
+                    # If it's a string like "2h ago" or "3d ago", use it directly
+                    if isinstance(last_backup_raw, str) and (" ago" in last_backup_raw or "day" in last_backup_raw):
+                        last_backup_str = last_backup_raw
+                    # If it's a UTC timestamp (seconds since epoch)
+                    elif isinstance(last_backup_raw, (int, float)):
+                        delta = _dt.now() - _dt.fromtimestamp(last_backup_raw)
+                        if delta.days > 0:
+                            last_backup_str = "{} day(s) ago".format(delta.days)
+                        elif delta.seconds > 3600:
+                            last_backup_str = "{}h ago".format(delta.seconds // 3600)
+                        else:
+                            last_backup_str = "{}m ago".format(delta.seconds // 60)
+                    # If it's an ISO datetime string
+                    elif isinstance(last_backup_raw, str):
+                        try:
+                            dt = _dt.fromisoformat(last_backup_raw.replace("Z", "+00:00"))
+                            delta = _dt.now().astimezone() - dt
+                            if delta.days > 0:
+                                last_backup_str = "{} day(s) ago".format(delta.days)
+                            elif delta.seconds > 3600:
+                                last_backup_str = "{}h ago".format(delta.seconds // 3600)
+                            else:
+                                last_backup_str = "{}m ago".format(delta.seconds // 60)
+                        except (ValueError, TypeError):
+                            last_backup_str = str(last_backup_raw)
+                # If no relative time computed, check for a raw string
+                if last_backup_str == "Not configured" and isinstance(last_backup_raw, str):
+                    last_backup_str = last_backup_raw
             # Tailscale info
             ts = report.get("tailscale", {})
             tailscale_ip = ts.get("ip", "") if ts else ""
@@ -1136,6 +1157,5 @@ async def client_portal(request: Request):
             backup_badge_text="Active" if backup_enabled else "Not Configured",
             last_backup_str=last_backup_str,
             next_backup_str=next_backup_str,
-            backup_sync_class="text-green-400" if backup_enabled else "text-gray-500",
-            backup_sync_text="✓ Synced" if backup_enabled else "—",
+
         )

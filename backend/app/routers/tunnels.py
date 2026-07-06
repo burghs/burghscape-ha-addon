@@ -177,7 +177,7 @@ async def create_tunnel(tunnel: TunnelCreate, db: AsyncSession = Depends(get_db)
     )
 
 
-@router.get("/config", response_model=TunnelConfig)
+@router.get("/config")
 async def get_tunnel_config_for_addon(
     authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
@@ -254,12 +254,15 @@ async def get_tunnel_config_for_addon(
     if not client.cloudflare_tunnel_id:
         raise HTTPException(status_code=500, detail="Tunnel not available")
 
-    return TunnelConfig(
-        tunnel_id=client.cloudflare_tunnel_id,
-        tunnel_token=client.cloudflare_tunnel_token,
-        hostname=hostname,
-        account_tag=CF_ACCOUNT_ID,
-    )
+    # Return both naming conventions for backward compatibility with current agent code
+    return {
+        tunnel_id: client.cloudflare_tunnel_id,
+        tunnel_token: client.cloudflare_tunnel_token,
+        hostname: hostname,
+        account_tag: CF_ACCOUNT_ID,
+        id: client.cloudflare_tunnel_id,
+        token: client.cloudflare_tunnel_token,
+    }
 
 
 @router.get("/{client_id}", response_model=TunnelInfo)

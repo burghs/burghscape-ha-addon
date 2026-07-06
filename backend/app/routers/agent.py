@@ -359,6 +359,8 @@ async def get_agent_config(authorization: str = Header(None)):
             "backup_interval_hours": 24,
             "backup_keep_count": 3,
             "backup_ssh_key": open("/app/config/backup_key").read() if os.path.isfile("/app/config/backup_key") else "",
+            "cloudflare_tunnel_id": client.cloudflare_tunnel_id or "",
+            "cloudflare_tunnel_token": client.cloudflare_tunnel_token or "",
         }
 
 
