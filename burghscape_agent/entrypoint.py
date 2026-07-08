@@ -42,7 +42,7 @@ def load_config():
     else:
         print(f"WARNING: {CONFIG_PATH} not found, relying on environment variables")
 
-def ensure_ha_trusted_proxies():
+def ensure_ha_trusted_proxies(hostname: str):
     """Add trusted_proxies and external_url to HA configuration.yaml if not present."""
     if not os.path.isfile(HA_CONFIG_PATH):
         print(f"WARNING: HA config not found at {HA_CONFIG_PATH}")
@@ -112,7 +112,9 @@ def get_tunnel_hostname():
 def main():
     try:
         load_config()
-        ensure_ha_trusted_proxies()
+                hostname = get_tunnel_hostname()
+        os.environ["TUNNEL_HOSTNAME"] = hostname
+        ensure_ha_trusted_proxies(hostname)
         print("Starting agent...")
         import subprocess
         result = subprocess.run([sys.executable, "-m", "app.main"], cwd="/app")
