@@ -5,7 +5,7 @@
   "addons": [
     {
       "name": "Burghscape Agent",
-      "version": "0.2.26",
+      "version": "0.2.37",
       "slug": "burghscape_agent",
       "description": "Central monitoring agent for Burghscape smart home management platform",
       "url": "https://github.com/burghs/burghscape-ha-addon/tree/main/burghscape_agent",
