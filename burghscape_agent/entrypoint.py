@@ -51,7 +51,6 @@ def ensure_ha_trusted_proxies(hostname: str):
     with open(HA_CONFIG_PATH, "r") as f:
         content = f.read()
     
-    hostname = os.environ.get("TUNNEL_HOSTNAME", "")
     external_url = f"https://{hostname}" if hostname else None
     
     already_has_trusted = "use_x_forwarded_for" in content and "trusted_proxies" in content
@@ -96,7 +95,7 @@ def ensure_ha_trusted_proxies(hostname: str):
             ha_block = os.linesep.join([
                 "",
                 "homeassistant:",
-                "  external_url: \"" + external_url + "\"",
+                "  external_url: "" + external_url + """,
             ]) + os.linesep
             with open(HA_CONFIG_PATH, "a") as f:
                 f.write(ha_block)
@@ -112,7 +111,7 @@ def get_tunnel_hostname():
 def main():
     try:
         load_config()
-                hostname = get_tunnel_hostname()
+        hostname = get_tunnel_hostname()
         os.environ["TUNNEL_HOSTNAME"] = hostname
         ensure_ha_trusted_proxies(hostname)
         print("Starting agent...")
