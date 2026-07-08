@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Main agent loop for Burghscape Agent add-on."""
 import asyncio
 import logging
@@ -141,6 +142,9 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
     tunnel_token = tunnel_cfg["tunnel_token"]
     tunnel_id = tunnel_cfg.get("tunnel_id", "")
     hostname = tunnel_cfg.get("hostname", "")
+    if not hostname:
+        hostname = config.instance_name + ".mybeacon.co.za" # Fallback if platform doesn't provide it
+
 
     logger.info(f"Tunnel config: id={tunnel_id}, hostname={hostname}")
 
@@ -199,7 +203,7 @@ async def main_loop():
                     tunnel_setup_done = await setup_tunnel(platform)
 
                 report = await run_once(ha, platform)
-                if not report.get("online"):
+                if not report.get("online"):\
                     logger.warning("HA appears offline, will retry...")
         except Exception as e:
             logger.error("Error in main loop: %s", e, exc_info=True)
