@@ -21,9 +21,9 @@ map:
 - config:rw
 - ssl:ro
 options:
-  platform_url: ''
-  subscription_token: ''
-  instance_name: ''
+  platform_url: 
+  subscription_token: 
+  instance_name: 
   heartbeat_interval: 300
   monitor_entities: true
   monitor_disk: true
@@ -32,7 +32,7 @@ options:
   monitor_backups: true
   monitor_frigate: false
   report_days: 30
-  ha_token: ''
+  ha_token: 
   backup_enabled: false
   backup_interval_hours: 24
   backup_max_part_size_mb: 100
@@ -52,4 +52,3 @@ schema:
   backup_enabled: bool
   backup_interval_hours: int(1,168)
   backup_max_part_size_mb: int(1,500)
-

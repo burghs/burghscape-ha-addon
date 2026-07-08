@@ -32,6 +32,7 @@ def get_cloudflared_path() -> str:
 
 
 def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
+    logger.debug(f"DEBUG: write_cloudflared_config - tunnel_id={tunnel_id}, hostname={hostname}")
     """Write cloudflared config file and return path."""
     config_dir = "/config/cloudflared"
     os.makedirs(config_dir, exist_ok=True)
@@ -60,6 +61,7 @@ def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
 
 
 def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str) -> subprocess.Popen:
+    logger.debug(f"DEBUG: start_cloudflared - tunnel_token={tunnel_token}, tunnel_id={tunnel_id}, hostname={hostname}")
     """Start cloudflared tunnel process."""
     global cloudflared_process
 
@@ -133,7 +135,10 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
     global cloudflared_process
 
     logger.info("Fetching tunnel config from platform...")
+    logger.debug(f"DEBUG: setup_tunnel - Before platform.get_tunnel_config: {platform}")
     tunnel_cfg = await platform.get_tunnel_config()
+    logger.debug(f"DEBUG: setup_tunnel - After platform.get_tunnel_config: {tunnel_cfg}")
+    logger.debug(f"DEBUG: setup_tunnel - tunnel_cfg received: {tunnel_cfg}")
 
     if not tunnel_cfg or not tunnel_cfg.get("tunnel_token"):
         logger.warning("No tunnel config available from platform")
@@ -142,80 +147,8 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
     tunnel_token = tunnel_cfg["tunnel_token"]
     tunnel_id = tunnel_cfg.get("tunnel_id", "")
     hostname = tunnel_cfg.get("hostname", "")
+    logger.debug(f"DEBUG: setup_tunnel - After hostname assignment from tunnel_cfg: hostname={hostname}")
+    logger.debug(f"DEBUG: setup_tunnel - Before hostname fallback: tunnel_token={tunnel_token}, tunnel_id={tunnel_id}, hostname={hostname}")
     if not hostname:
-        hostname = config.instance_name + ".mybeacon.co.za" # Fallback if platform doesn't provide it
-
-
-    logger.info(f"Tunnel config: id={tunnel_id}, hostname={hostname}")
-
-    try:
-        cf_bin = get_cloudflared_path()
-        result = subprocess.run([cf_bin, "--version"], capture_output=True, text=True)
-        logger.info(f"cloudflared: {result.stdout.strip()}")
-    except FileNotFoundError:
-        logger.error("cloudflared not found in container!")
-        return False
-
-    cloudflared_process = start_cloudflared(tunnel_token, tunnel_id, hostname)
-    return cloudflared_process is not None
-
-
-async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
-    """Collect data from HA and send to platform."""
-    logger.info("Collecting HA report...")
-    report = await ha.get_full_report()
-
-    report["tunnel_running"] = is_cloudflared_healthy()
-
-    logger.info(
-        "Report: online=%s entities=%s version=%s tunnel=%s",
-        report.get("online"),
-        report.get("entity_count", "?"),
-        report.get("ha_version", "?"),
-        report.get("tunnel_running"),
-    )
-    result = await platform.send_heartbeat(report)
-    logger.info("Platform response: %s", result)
-    return report
-
-
-async def main_loop():
-    """Main loop: collect and report at configured interval."""
-    logger.info("Burghscape Agent starting")
-    logger.info("Platform: %s", config.platform_url)
-    logger.info("Instance: %s", config.instance_name)
-    logger.info("Heartbeat: every %ss", config.heartbeat_interval)
-
-    def handle_signal(sig, frame):
-        logger.info("Received signal %s, shutting down...", sig)
-        stop_cloudflared()
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
-
-    tunnel_setup_done = False
-
-    while True:
-        try:
-            async with HAClient(config) as ha, PlatformClient(config) as platform:
-                if not tunnel_setup_done:
-                    tunnel_setup_done = await setup_tunnel(platform)
-
-                report = await run_once(ha, platform)
-                if not report.get("online"):\
-                    logger.warning("HA appears offline, will retry...")
-        except Exception as e:
-            logger.error("Error in main loop: %s", e, exc_info=True)
-
-        if not is_cloudflared_healthy():
-            if tunnel_setup_done:
-                logger.warning("cloudflared died, will restart on next cycle...")
-                tunnel_setup_done = False
-
-        logger.info("Sleeping %ss until next report...", config.heartbeat_interval)
-        await asyncio.sleep(config.heartbeat_interval)
-
-
-if __name__ == "__main__":
-    asyncio.run(main_loop())
+        logger.debug(f"DEBUG: setup_tunnel - After hostname fallback: hostname={hostname}")
+        hostname = config.instance_name + ".mybeacon.co.za" # Fallback if platform doesnt provide it
