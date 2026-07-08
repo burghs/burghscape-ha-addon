@@ -1,4 +1,4 @@
-    #!/usr/bin/env python3
+#!/usr/bin/env python3
     """Main agent loop for Burghscape Agent add-on."""
     import asyncio
     import logging
@@ -14,7 +14,7 @@
     from app.platform_client import PlatformClient
 
     logging.basicConfig(
-        level=logging.INFO,
+            level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     logger = logging.getLogger("burghscape.agent")
@@ -228,4 +228,3 @@ if not report.get("online"):
 
     if __name__ == "__main__":
         asyncio.run(main_loop())
-    
