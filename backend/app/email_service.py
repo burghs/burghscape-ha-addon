@@ -65,7 +65,7 @@ def generate_temp_password(length: int = 10) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
-def send_welcome_email(to_email: str, client_name: str, temp_password: str, portal_url: str):
+def send_welcome_email(to_email: str, client_name: str, temp_password: str, client_portal_url: str, ha_external_url: str = None):
     """Send welcome email to new client with their portal credentials."""
     APP_ENV = os.environ.get("APP_ENV", "production").lower()
     if APP_ENV == "development" and TESTING_EMAIL:
@@ -108,7 +108,7 @@ def send_welcome_email(to_email: str, client_name: str, temp_password: str, port
                         <table width="100%" cellpadding="0" cellspacing="0">
                             <tr><td style="padding:8px 0; border-bottom:1px solid rgba(139,92,246,0.1);">
                                 <span style="color:#64748b; font-size:13px;">Portal URL</span><br>
-                                <a href="{portal_url}" style="color:#a78bfa; font-size:15px; text-decoration:none;">{portal_url}</a>
+                                <a href="{client_portal_url}" style="color:#a78bfa; font-size:15px; text-decoration:none;">{client_portal_url}</a>
                             </td></tr>
                             <tr><td style="padding:8px 0; border-bottom:1px solid rgba(139,92,246,0.1);">
                                 <span style="color:#64748b; font-size:13px;">Email</span><br>
@@ -121,7 +121,7 @@ def send_welcome_email(to_email: str, client_name: str, temp_password: str, port
                         </table>
                         <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:15px;">
                             <tr><td>
-                                <a href="{portal_url}" style="display:block; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; text-align:center; padding:14px; border-radius:10px; text-decoration:none; font-weight:600; font-size:15px;">LOGIN TO YOUR PORTAL →</a>
+                                <a href="{client_portal_url}" style="display:block; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; text-align:center; padding:14px; border-radius:10px; text-decoration:none; font-weight:600; font-size:15px;">LOGIN TO YOUR PORTAL →</a>
                             </td></tr>
                         </table>
                     </div>
@@ -189,11 +189,11 @@ Your client portal is now live.
 
 LOGIN DETAILS
 =============
-Portal URL: {portal_url}
+Portal URL: {client_portal_url}
 Email: {to_email}
 Temporary Password: {temp_password}
 
-LOGIN NOW: {portal_url}
+LOGIN NOW: {client_portal_url}
 
 SECURITY NOTICE
 ===============

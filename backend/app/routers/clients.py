@@ -198,13 +198,15 @@ async def create_client(client_data: ClientCreate, db: AsyncSession = Depends(ge
     await db.flush()
     
     # Send welcome email (opt-in)
-    portal_url = f"https://{client.subdomain}.mybeacon.co.za"
+    client_portal_url = "https://client.mybeacon.co.za"
+    ha_external_url = f"https://{client.subdomain}.mybeacon.co.za"
     if client_data.send_welcome_email:
         send_welcome_email(
             to_email=client.email,
             client_name=client.name,
             temp_password=temp_password,
-            portal_url=portal_url,
+            client_portal_url=client_portal_url,
+            ha_external_url=ha_external_url,
         )
     
     return client_to_dict(client, token.token)
@@ -242,12 +244,14 @@ async def resend_welcome_email(
         portal_user.password_hash = hash_password(temp_password)
         portal_user.force_password_change = True
         await db.flush()
-    portal_url = f"https://{client.subdomain}.mybeacon.co.za"
+    client_portal_url = "https://client.mybeacon.co.za"
+    ha_external_url = f"https://{client.subdomain}.mybeacon.co.za"
     send_welcome_email(
         to_email=client.email or portal_user.email,
         client_name=client.name,
         temp_password=temp_password,
-        portal_url=portal_url,
+        client_portal_url=client_portal_url,
+            ha_external_url=ha_external_url,
     )
     return {"status": "sent", "email": client.email or portal_user.email}
 
