@@ -67,8 +67,11 @@ def generate_temp_password(length: int = 10) -> str:
 
 def send_welcome_email(to_email: str, client_name: str, temp_password: str, portal_url: str):
     """Send welcome email to new client with their portal credentials."""
-    # Testing override: redirect to test address
-    actual_to = TESTING_EMAIL if TESTING_EMAIL else to_email
+    APP_ENV = os.environ.get("APP_ENV", "production").lower()
+    if APP_ENV == "development" and TESTING_EMAIL:
+        actual_to = TESTING_EMAIL
+    else:
+        actual_to = to_email
 
     subject = f"Welcome to Burghscape — Your Smart Home Portal is Ready 🏠"
 
@@ -223,8 +226,11 @@ Burghscape Pty Ltd - mybeacon.co.za
 
 def send_password_reset_email(to_email: str, client_name: str, reset_token: str, portal_url: str):
     """Send password reset email."""
-    # Testing override
-    actual_to = TESTING_EMAIL if TESTING_EMAIL else to_email
+    APP_ENV = os.environ.get("APP_ENV", "production").lower()
+    if APP_ENV == "development" and TESTING_EMAIL:
+        actual_to = TESTING_EMAIL
+    else:
+        actual_to = to_email
     subject = "Burghscape — Password Reset Request"
 
     html = f"""
