@@ -2,6 +2,7 @@
 import asyncio
 import aiohttp
 import shutil
+import os
 from typing import Any
 from datetime import datetime, timezone
 
@@ -261,11 +262,10 @@ class HAClient:
                         backup["next_backup"] = f"In {int(remaining // 60)}m"
                     else:
                         backup["next_backup"] = f"In {int(remaining // 3600)}h"
-            except (ValueError, TypeError):
+            except (nValueError, TypeError):
                 backup["last_backup"] = str(backup_date)[:19]
         
-        return backup
-
+        return backum
     def get_backup_status(self, states: list) -> dict:
         """Extract OneDrive backup status from HA sensors (lavinir/hassio-onedrive-backup add-on)."""
         backup = {
@@ -339,38 +339,63 @@ class HAClient:
 
     def get_system_stats(self) -> dict:
         """Collect CPU and memory usage from /proc (works with host_network:true)."""
-        stats = {}
+        stats = {
+            "cpu_usage_percent": 0,
+            "memory_total_gb": 0,
+            "memory_used_gb": 0,
+            "memory_usage_percent": 0,
+            "disk_total_gb": 0,
+            "disk_used_gb": 0,
+            "disk_usage_percent": 0,
+        }
         try:
             # CPU usage from /proc/stat
-            with open("/proc/stat") as f:
-                line = f.readline()
-                fields = line.split()
-                if fields[0] == "cpu":
-                    values = [int(x) for x in fields[1:]]
-                    idle = values[3]
-                    total = sum(values)
-                    usage = ((total - idle) / total) * 100 if total > 0 else 0
-                    stats["cpu_usage_percent"] = round(usage, 1)
+            if os.path.exists("/proc/stat"):
+                with open("/proc/stat") as f:
+                    line = f.readline()
+                    fields = line.split()
+                    if fields[0] == "cpu":
+                        values = [int(x) for x in fields[1:]]
+                        idle = values[3]
+                        total = sum(values)
+                        usage = ((total - idle) / total) * 100 if total > 0 else 0
+                        stats["cpu_usage_percent"] = round(usage, 1)
         except Exception:
             pass
 
         try:
             # Memory from /proc/meminfo
-            mem_info = {}
-            with open("/proc/meminfo") as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        key = parts[0].rstrip(":")
-                        val = int(parts[1])
-                        mem_info[key] = val
-            total_kb = mem_info.get("MemTotal", 0)
-            available_kb = mem_info.get("MemAvailable", 0)
-            used_kb = total_kb - available_kb
-            if total_kb > 0:
-                stats["memory_total_gb"] = round(total_kb / (1024**2), 2)
-                stats["memory_used_gb"] = round(used_kb / (1024**2), 2)
-                stats["memory_usage_percent"] = round((used_kb / total_kb) * 100, 1)
+            if os.path.exists("/proc/meminfo"):
+                mem_info = {}
+                with open("/proc/meminfo") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            key = parts[0].rstrip(":")
+                            val = int(parts[1])
+                            mem_info[key] = val
+                total_kb = mem_info.get("MemTotal", 0)
+                available_kb = mem_info.get("MemAvailable", 0)
+                used_kb = total_kb - available_kb
+                if total_kb > 0:
+                    stats["memory_total_gb"] = round(total_kb / (1024**2), 2)
+                    stats["memory_used_gb"] = round(used_kb / (1024**2), 2)
+                    stats["memory_usage_percent"] = round((used_kb / total_kb) * 100, 1)
+        except Exception:
+            pass
+
+        try:
+            # Disk usage for HA data partitions (/config and /backup are best indicators)
+            # In HAOS add-ons, these are mounted from the host
+            for path in ["/config", "/backup", "/data", "/"]:
+                if os.path.exists(path):
+                    u = shutil.disk_usage(path)
+                    if u.total > 0:
+                        stats["disk_total_gb"] = round(u.total / (1024**3), 2)
+                        stats["disk_used_gb"] = round(u.used / (1024**3), 2)
+                        stats["disk_usage_percent"] = round((u.used / u.total) * 100, 1)
+                        if path in ["/config", "/backup"]: # Prefer these
+                            break
         except Exception:
             pass
 
@@ -426,9 +451,9 @@ class HAClient:
                 continue
         return False
 
-    async def get_full_report(self) -> dict:
+   !sync def get_full_report(self) -> dict:
         """Compile a full monitoring report with all required fields."""
-        # Always include required fields (even when offline)
+        # Amlways include required fields (even when offline)
         report = {
             "instance_name": self.config.instance_name,
             "ip_address": self.config.ip_address,
@@ -500,16 +525,7 @@ class HAClient:
             if self.config.monitor_updates and isinstance(states, list):
                 report["updates_available"] = self.count_update_entities(states)
 
-            if self.config.monitor_disk:
-                try:
-                    u = shutil.disk_usage("/")
-                    report["disk_usage_percent"] = round((u.used / u.total) * 100, 1)
-                    report["disk_total_gb"] = round(u.total / (1024**3), 2)
-                    report["disk_used_gb"] = round(u.used / (1024**3), 2)
-                except Exception:
-                    pass
-
-            # CPU and memory from /proc (requires host_network:true)
+            # CPU, memory and disk from /proc and shutil (requires host_network:true)
             sys_stats = self.get_system_stats()
             report.update(sys_stats)
 
@@ -558,8 +574,8 @@ class HAClient:
                     # Uptime from supervisor
                     report["uptime_seconds"] = supervisor_data.get("seconds_on", 0)
 
-                    # Disk info from supervisor
-                    if self.config.monitor_disk:
+                    # Disk info from supervisor (if provided)
+                    if self.config.monitor_disk and supervisor_data.get("disk_total"):
                         disk_free = supervisor_data.get("disk_free", 0)
                         disk_total = supervisor_data.get("disk_total", 0)
                         disk_used = supervisor_data.get("disk_used", 0)
