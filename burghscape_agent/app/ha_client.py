@@ -451,7 +451,7 @@ class HAClient:
                 continue
         return False
 
-   !sync def get_full_report(self) -> dict:
+    async def get_full_report(self) -> dict:
         """Compile a full monitoring report with all required fields."""
         # Amlways include required fields (even when offline)
         report = {
