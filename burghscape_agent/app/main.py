@@ -103,7 +103,7 @@ async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
         report.get("tunnel_running"))
     result = await platform.send_heartbeat(report)
     logger.info("Platform response: %s", result)
-    return result
+    return report
 
 
 async def main_loop():
