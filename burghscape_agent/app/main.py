@@ -84,7 +84,7 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
         if not tunnel_config or not tunnel_config.get("token"):
             logger.warning("No tunnel config received from platform")
             return False
-        logger.info(f"Tunnel config received: {tunnel_config.get(hostname)}")
+        logger.info(f"Tunnel config received: {tunnel_config.get('hostname')}")
         global cloudflared_process
         process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], tunnel_config["hostname"])
         cloudflared_process = process
