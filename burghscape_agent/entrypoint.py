@@ -24,7 +24,10 @@ def load_config():
         }
         for key, env_var in env_map.items():
             if key in options and options[key] not in (None, ""):
-                os.environ[env_var] = str(options[key])
+                value = str(options[key])
+                if key == "subscription_token":
+                    value = value.strip()
+                os.environ[env_var] = value
 
 def ensure_ha_config(hostname: str):
     if not os.path.isfile(HA_CONFIG_PATH):
