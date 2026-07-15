@@ -17,6 +17,7 @@ logger = logging.getLogger("burghscape.agent")
 
 config = Config()
 cloudflared_process = None
+HA_CONFIG_PATH = "/config/configuration.yaml"
 
 
 def get_cloudflared_path() -> str:
@@ -36,6 +37,68 @@ def write_cloudflared_config(tunnel_id: str, hostname: str) -> str:
         yaml.dump(cfg, f)
     logger.info(f"Cloudflare config written to {config_path}")
     return config_path
+
+
+def ensure_ha_config(hostname: str):
+    if not os.path.isfile(HA_CONFIG_PATH):
+        logger.warning("HA config not found at %s", HA_CONFIG_PATH)
+        return
+
+    try:
+        import yaml
+        with open(HA_CONFIG_PATH, "r") as f:
+            ha_config = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error("Could not parse %s: %s. Skipping modifications.", HA_CONFIG_PATH, e)
+        return
+
+    made_changes = False
+
+    http_config = ha_config.get("http", {})
+    if not isinstance(http_config, dict):
+        http_config = {}
+
+    if http_config.get("use_x_forwarded_for") is not True:
+        http_config["use_x_forwarded_for"] = True
+        made_changes = True
+
+    existing_proxies = http_config.get("trusted_proxies", [])
+    if isinstance(existing_proxies, str):
+        current_proxies = {existing_proxies}
+    elif isinstance(existing_proxies, list):
+        current_proxies = set(existing_proxies)
+    else:
+        current_proxies = set()
+
+    required_proxies = {"127.0.0.1", "::1", "172.30.32.0/23"}
+    updated_proxies = current_proxies | required_proxies
+    if updated_proxies != current_proxies:
+        http_config["trusted_proxies"] = sorted(updated_proxies)
+        made_changes = True
+
+    if made_changes or ha_config.get("http") != http_config:
+        ha_config["http"] = http_config
+
+    external_url = f"https://{hostname}"
+    homeassistant_config = ha_config.get("homeassistant", {})
+    if not isinstance(homeassistant_config, dict):
+        homeassistant_config = {}
+    if homeassistant_config.get("external_url") != external_url:
+        logger.info("Setting Home Assistant external_url to %s", external_url)
+        homeassistant_config["external_url"] = external_url
+        ha_config["homeassistant"] = homeassistant_config
+        made_changes = True
+
+    if made_changes:
+        logger.info("Writing updated Home Assistant proxy configuration to %s", HA_CONFIG_PATH)
+        try:
+            with open(HA_CONFIG_PATH, "w") as f:
+                yaml.dump(ha_config, f, default_flow_style=False, sort_keys=False)
+            logger.info("Home Assistant configuration updated. A Home Assistant restart may be required.")
+        except Exception as e:
+            logger.error("Failed to write %s: %s", HA_CONFIG_PATH, e)
+    else:
+        logger.info("Home Assistant proxy configuration is already correct.")
 
 
 def start_cloudflared(tunnel_token: str, tunnel_id: str, hostname: str):
@@ -84,9 +147,11 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
         if not tunnel_config or not tunnel_config.get("token"):
             logger.warning("No tunnel config received from platform")
             return False
-        logger.info(f"Tunnel config received: {tunnel_config.get('hostname')}")
+        hostname = tunnel_config["hostname"]
+        logger.info(f"Tunnel config received: {hostname}")
+        ensure_ha_config(hostname)
         global cloudflared_process
-        process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], tunnel_config["hostname"])
+        process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], hostname)
         cloudflared_process = process
         return process is not None
     except Exception as e:
