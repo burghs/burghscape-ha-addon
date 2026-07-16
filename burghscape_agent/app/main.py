@@ -26,6 +26,7 @@ ONBOARDING_STATE_PATH = "/data/onboarding_state.json"
 REQUIRED_PROXIES = {"127.0.0.1", "::1", "172.30.32.0/23"}
 onboarding_status = "starting"
 onboarding_error = None
+attempted_onboarding_keys = set()
 
 
 class TaggedYamlValue:
@@ -184,6 +185,44 @@ def desired_config_hash(hostname: str) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
+def _hash_secret(value: str) -> str:
+    if not value:
+        return ""
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def addon_config_hash() -> str:
+    payload = {
+        "ha_url": config.ha_url,
+        "ha_token_hash": _hash_secret(config.ha_token),
+        "platform_url": config.platform_url,
+        "subscription_token_hash": _hash_secret(config.subscription_token),
+        "instance_name": config.instance_name,
+        "heartbeat_interval": config.heartbeat_interval,
+        "monitor_entities": config.monitor_entities,
+        "monitor_disk": config.monitor_disk,
+        "monitor_automations": config.monitor_automations,
+        "monitor_updates": config.monitor_updates,
+        "monitor_backups": config.monitor_backups,
+        "monitor_frigate": config.monitor_frigate,
+        "backup_enabled": config.backup_enabled,
+        "backup_interval_hours": config.backup_interval_hours,
+        "backup_max_part_size_mb": config.backup_max_part_size_mb,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def onboarding_attempt_key(config_hash: str, tunnel_config: dict) -> str:
+    payload = {
+        "config_hash": config_hash,
+        "addon_config_hash": addon_config_hash(),
+        "hostname": tunnel_config.get("hostname", ""),
+        "tunnel_id": tunnel_config.get("id", ""),
+        "tunnel_token_hash": _hash_secret(tunnel_config.get("token", "")),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
 def validate_ha_config_file(hostname: str, path: str = HA_CONFIG_PATH) -> bool:
     try:
         ha_config = load_ha_config_file(path)
@@ -284,33 +323,52 @@ async def wait_for_core_restart(timeout_seconds: int = 180) -> bool:
     return False
 
 
-async def reverse_proxy_config_is_active(hostname: str) -> bool:
-    log_effective_ha_proxy_config(hostname)
-    headers = {
-        "Host": hostname,
-        "X-Forwarded-For": "203.0.113.10",
-        "X-Forwarded-Proto": "https",
-    }
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get("http://localhost:8123/", headers=headers, allow_redirects=False) as resp:
-                body = await resp.text()
-                sanitized_body = sanitize_response_body(body)
-                logger.info(
-                    "Home Assistant reverse-proxy verification status=%s body=%s",
-                    resp.status,
-                    sanitized_body,
-                )
-                if 200 <= resp.status < 400:
-                    return True
-                set_onboarding_status(
-                    "verification_failed",
-                    f"Reverse-proxy verification returned HTTP {resp.status}: {sanitized_body}",
-                )
-                return False
-    except Exception as e:
-        set_onboarding_status("verification_failed", f"Reverse-proxy verification failed: {e}")
+def valid_public_redirect(hostname: str, location: str) -> bool:
+    if not location:
         return False
+    return (
+        location.startswith("/")
+        or location.startswith(f"https://{hostname}/")
+        or location.startswith(f"http://{hostname}/")
+    )
+
+
+async def public_tunnel_is_active(hostname: str, attempts: int = 12, delay_seconds: int = 5) -> bool:
+    url = f"https://{hostname}/"
+    last_error = "no verification attempts completed"
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for attempt in range(1, attempts + 1):
+            try:
+                async with session.get(url, allow_redirects=False) as resp:
+                    body = sanitize_response_body(await resp.text())
+                    location_header = resp.headers.get("Location", "")
+                    location = sanitize_response_body(location_header, limit=200)
+                    logger.info(
+                        "Public tunnel verification attempt=%s/%s status=%s location=%s body=%s",
+                        attempt,
+                        attempts,
+                        resp.status,
+                        location,
+                        body,
+                    )
+                    if 200 <= resp.status < 300:
+                        return True
+                    if 300 <= resp.status < 400 and valid_public_redirect(hostname, location_header):
+                        return True
+                    last_error = f"HTTP {resp.status}: {body}"
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {sanitize_response_body(str(e), limit=200)}"
+                logger.warning(
+                    "Public tunnel verification attempt=%s/%s failed: %s",
+                    attempt,
+                    attempts,
+                    last_error,
+                )
+            if attempt < attempts:
+                await asyncio.sleep(delay_seconds)
+    set_onboarding_status("verification_failed", f"Public tunnel verification failed for {url}: {last_error}")
+    return False
 
 def get_cloudflared_path() -> str:
     for path in ["/usr/local/bin/cloudflared", "/usr/bin/cloudflared", "cloudflared"]:
@@ -441,6 +499,12 @@ def stop_cloudflared():
     if cloudflared_process and cloudflared_process.poll() is None:
         logger.info("Stopping cloudflared...")
         cloudflared_process.terminate()
+        try:
+            cloudflared_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("cloudflared did not stop cleanly; killing process")
+            cloudflared_process.kill()
+            cloudflared_process.wait(timeout=5)
         cloudflared_process = None
 
 
@@ -451,6 +515,7 @@ def is_cloudflared_healthy() -> bool:
 
 async def setup_tunnel(platform: PlatformClient) -> bool:
     try:
+        global cloudflared_process
         tunnel_config = await platform.get_tunnel_config()
         if not tunnel_config or not tunnel_config.get("token"):
             set_onboarding_status("tunnel_config_failed", "No tunnel config received from platform")
@@ -460,6 +525,17 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
 
         state = load_onboarding_state()
         config_hash = desired_config_hash(hostname)
+        attempt_key = onboarding_attempt_key(config_hash, tunnel_config)
+        if (
+            state.get("status") == "verification_failed"
+            and state.get("attempt_key") == attempt_key
+            and attempt_key in attempted_onboarding_keys
+        ):
+            set_onboarding_status("verification_failed", state.get("error") or "Previous public tunnel verification failed")
+            logger.warning("Skipping repeated onboarding attempt for unchanged tunnel/configuration")
+            return True
+
+        attempted_onboarding_keys.add(attempt_key)
         config_changed, config_error = ensure_ha_config(hostname)
         if config_error:
             set_onboarding_status("config_failed", config_error)
@@ -486,24 +562,47 @@ async def setup_tunnel(platform: PlatformClient) -> bool:
             if not await wait_for_core_restart():
                 return False
 
-        if not await reverse_proxy_config_is_active(hostname):
-            return False
+        log_effective_ha_proxy_config(hostname)
+
+        process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], hostname)
+        cloudflared_process = process
+        if process is None:
+            error = "cloudflared did not stay running"
+            set_onboarding_status("cloudflared_failed", error)
+            save_onboarding_state({
+                "attempt_key": attempt_key,
+                "config_hash": config_hash,
+                "status": "verification_failed",
+                "error": error,
+                "failed_at": time.time(),
+                "hostname": hostname,
+            })
+            return True
+
+        set_onboarding_status("verifying_public_tunnel")
+        if not await public_tunnel_is_active(hostname):
+            error = onboarding_error or "Public tunnel verification failed"
+            save_onboarding_state({
+                "attempt_key": attempt_key,
+                "config_hash": config_hash,
+                "status": "verification_failed",
+                "error": error,
+                "failed_at": time.time(),
+                "hostname": hostname,
+            })
+            stop_cloudflared()
+            return True
 
         save_onboarding_state({
+            "attempt_key": attempt_key,
             "config_hash": config_hash,
             "restart_requested": False,
             "verified": True,
             "verified_at": time.time(),
+            "status": "ready",
             "hostname": hostname,
         })
         set_onboarding_status("ready")
-
-        global cloudflared_process
-        process = start_cloudflared(tunnel_config["token"], tunnel_config["id"], hostname)
-        cloudflared_process = process
-        if process is None:
-            set_onboarding_status("cloudflared_failed", "cloudflared did not stay running")
-            return False
         return True
     except Exception as e:
         logger.error(f"Failed to setup tunnel: {e}")
@@ -549,9 +648,11 @@ async def main_loop():
                 report = await run_once(ha, platform)
                 if not report.get("online"):
                     logger.warning("HA appears offline, will retry...")
-                if not is_cloudflared_healthy():
+                if onboarding_status == "ready" and not is_cloudflared_healthy():
                     logger.warning("cloudflared tunnel is down, attempting restart...")
                     tunnel_setup_done = False
+                elif onboarding_status != "ready" and not is_cloudflared_healthy():
+                    logger.info("cloudflared is not running while onboarding_status=%s", onboarding_status)
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)
         logger.info("Sleeping %ss until next report...", config.heartbeat_interval)
