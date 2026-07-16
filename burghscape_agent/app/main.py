@@ -106,6 +106,45 @@ def backup_ha_config(path: str = HA_CONFIG_PATH) -> str:
     return backup_path
 
 
+
+def sanitize_response_body(body: str, limit: int = 300) -> str:
+    sanitized = " ".join((body or "").split())
+    return sanitized[:limit]
+
+
+def find_top_level_key_count(path: str, key: str) -> int:
+    count = 0
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                stripped = line.strip()
+                if not line.startswith((" ", "\t")) and stripped.startswith(f"{key}:"):
+                    count += 1
+    except Exception as e:
+        logger.warning("Could not inspect %s for duplicate %s blocks: %s", path, key, e)
+    return count
+
+
+def log_effective_ha_proxy_config(hostname: str):
+    try:
+        ha_config = load_ha_config_file()
+        http_config = ha_config.get("http", {})
+        homeassistant_config = ha_config.get("homeassistant", {})
+        logger.info(
+            "Effective HA proxy config from %s: http_type=%s use_x_forwarded_for=%s trusted_proxies=%s homeassistant_type=%s external_url_matches=%s top_level_http_blocks=%s top_level_homeassistant_blocks=%s",
+            HA_CONFIG_PATH,
+            type(http_config).__name__,
+            http_config.get("use_x_forwarded_for") if isinstance(http_config, dict) else None,
+            http_config.get("trusted_proxies") if isinstance(http_config, dict) else None,
+            type(homeassistant_config).__name__,
+            homeassistant_config.get("external_url") == f"https://{hostname}" if isinstance(homeassistant_config, dict) else False,
+            find_top_level_key_count(HA_CONFIG_PATH, "http"),
+            find_top_level_key_count(HA_CONFIG_PATH, "homeassistant"),
+        )
+    except Exception as e:
+        logger.warning("Could not log effective HA proxy config: %s", e)
+
+
 def set_onboarding_status(status: str, error: str | None = None):
     global onboarding_status, onboarding_error
     onboarding_status = status
@@ -246,6 +285,7 @@ async def wait_for_core_restart(timeout_seconds: int = 180) -> bool:
 
 
 async def reverse_proxy_config_is_active(hostname: str) -> bool:
+    log_effective_ha_proxy_config(hostname)
     headers = {
         "Host": hostname,
         "X-Forwarded-For": "203.0.113.10",
@@ -253,17 +293,24 @@ async def reverse_proxy_config_is_active(hostname: str) -> bool:
     }
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get("http://localhost:8123/", headers=headers) as resp:
+            async with session.get("http://localhost:8123/", headers=headers, allow_redirects=False) as resp:
                 body = await resp.text()
-                if resp.status == 400 and "reverse proxy" in body.lower():
-                    set_onboarding_status("verification_failed", "Home Assistant Core has not loaded reverse-proxy configuration")
-                    return False
-                logger.info("Home Assistant reverse-proxy verification returned HTTP %s", resp.status)
-                return True
+                sanitized_body = sanitize_response_body(body)
+                logger.info(
+                    "Home Assistant reverse-proxy verification status=%s body=%s",
+                    resp.status,
+                    sanitized_body,
+                )
+                if 200 <= resp.status < 400:
+                    return True
+                set_onboarding_status(
+                    "verification_failed",
+                    f"Reverse-proxy verification returned HTTP {resp.status}: {sanitized_body}",
+                )
+                return False
     except Exception as e:
         set_onboarding_status("verification_failed", f"Reverse-proxy verification failed: {e}")
         return False
-
 
 def get_cloudflared_path() -> str:
     for path in ["/usr/local/bin/cloudflared", "/usr/bin/cloudflared", "cloudflared"]:
