@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.50"
+version: "0.2.51"
 slug: burghscape_agent
 arch:
 - aarch64
@@ -13,6 +13,7 @@ startup: application
 boot: auto
 host_network: true
 hassio_api: true
+hassio_role: manager
 ingress: true
 ingress_port: 8127
 panel_icon: mdi:shield-home

@@ -62,40 +62,115 @@ def safe_backup_filename(slug: str) -> str:
     return f"burghscape-managed-backup-{safe_slug}.tar"
 
 
+class SupervisorApiError(RuntimeError):
+    def __init__(self, method: str, path: str, status: int, category: str):
+        self.method = method
+        self.path = path
+        self.status = status
+        self.category = category
+        super().__init__(f"Supervisor {method} {path} failed with HTTP {status}: {category}")
+
+
+async def response_preview(resp, limit: int = 120) -> str:
+    try:
+        body = await resp.text()
+    except Exception:
+        return ""
+    return " ".join((body or "").split())[:limit]
+
+
+def raise_supervisor_http_error(method: str, path: str, status: int, preview: str = ""):
+    if status == 403:
+        logger.error(
+            "Supervisor rejected add-on role for backup API: method=%s path=%s status=403",
+            method,
+            path,
+        )
+        raise SupervisorApiError(method, path, status, "supervisor_role_rejected")
+    if status == 401:
+        logger.error("Supervisor rejected backup API authentication: method=%s path=%s status=401", method, path)
+        raise SupervisorApiError(method, path, status, "supervisor_authentication_rejected")
+    logger.warning(
+        "Supervisor backup API request failed: method=%s path=%s status=%s response_preview=%s",
+        method,
+        path,
+        status,
+        preview,
+    )
+    raise SupervisorApiError(method, path, status, "supervisor_http_error")
+
+
 class SupervisorBackupClient:
-    def __init__(self, token: str):
+    def __init__(self, token: str, session: aiohttp.ClientSession | None = None):
         self.token = token
         self.base_url = ""
-        self.session: aiohttp.ClientSession | None = None
+        self.session = session
+        self._owns_session = session is None
 
     async def __aenter__(self):
-        headers = {"Authorization": f"Bearer {self.token}"}
-        self.session = aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=60))
-        await self._select_base_url()
+        if self.session is None:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            self.session = aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=60))
+            self._owns_session = True
+        try:
+            await self._select_base_url()
+        except Exception:
+            await self.close()
+            raise
         return self
 
     async def __aexit__(self, *args):
-        if self.session:
+        await self.close()
+
+    async def close(self):
+        if self.session and self._owns_session:
             await self.session.close()
+        if self._owns_session:
+            self.session = None
+
+    def _require_session(self) -> aiohttp.ClientSession:
+        if self.session is None:
+            raise RuntimeError("Supervisor API session is not initialized")
+        return self.session
 
     async def _select_base_url(self):
+        session = self._require_session()
+        last_error = None
         for base in SUPERVISOR_URLS:
             try:
-                async with self.session.get(f"{base}/backups", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(f"{base}/backups", timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         self.base_url = base
                         logger.info("Supervisor backup API selected: %s", base)
                         return
-                    logger.warning("Supervisor backup API %s returned HTTP %s", base, resp.status)
+                    if resp.status in (401, 403):
+                        try:
+                            raise_supervisor_http_error("GET", "/backups", resp.status)
+                        except SupervisorApiError as exc:
+                            last_error = exc
+                        continue
+                    preview = await response_preview(resp)
+                    logger.warning(
+                        "Supervisor backup API base URL rejected: base=%s status=%s response_preview=%s",
+                        base,
+                        resp.status,
+                        preview,
+                    )
+            except SupervisorApiError:
+                raise
             except Exception as exc:
                 logger.warning("Supervisor backup API %s unavailable: %s", base, type(exc).__name__)
+        if last_error:
+            raise last_error
         raise RuntimeError("Supervisor backup API unavailable")
 
     async def _json(self, method: str, path: str, **kwargs) -> dict:
-        async with self.session.request(method, f"{self.base_url}{path}", **kwargs) as resp:
-            body = await resp.text()
+        session = self._require_session()
+        async with session.request(method, f"{self.base_url}{path}", **kwargs) as resp:
             if resp.status not in (200, 201, 202):
-                raise RuntimeError(f"Supervisor {method} {path} returned HTTP {resp.status}: {body[:200]}")
+                preview = await response_preview(resp)
+                raise_supervisor_http_error(method, path, resp.status, preview)
+            body = await resp.text()
             if not body:
                 return {}
             return json.loads(body)
@@ -103,6 +178,10 @@ class SupervisorBackupClient:
     async def list_backups(self) -> list[dict]:
         try:
             return extract_backups(await self._json("GET", "/backups"))
+        except SupervisorApiError as exc:
+            if exc.status in (401, 403):
+                raise
+            return extract_backups(await self._json("GET", "/backups/info"))
         except Exception:
             return extract_backups(await self._json("GET", "/backups/info"))
 
@@ -155,10 +234,11 @@ class SupervisorBackupClient:
     async def download_backup(self, slug: str, destination: Path) -> tuple[int, str]:
         hasher = hashlib.sha256()
         size = 0
-        async with self.session.get(f"{self.base_url}/backups/{slug}/download", timeout=aiohttp.ClientTimeout(total=UPLOAD_TIMEOUT_SECONDS)) as resp:
+        session = self._require_session()
+        async with session.get(f"{self.base_url}/backups/{slug}/download", timeout=aiohttp.ClientTimeout(total=UPLOAD_TIMEOUT_SECONDS)) as resp:
             if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(f"Supervisor backup download returned HTTP {resp.status}: {body[:200]}")
+                preview = await response_preview(resp)
+                raise_supervisor_http_error("GET", "/backups/{slug}/download", resp.status, preview)
             with open(destination, "wb") as f:
                 async for chunk in resp.content.iter_chunked(1024 * 1024):
                     if not chunk:
