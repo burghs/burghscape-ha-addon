@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.48"
+version: "0.2.49"
 slug: burghscape_agent
 arch:
 - aarch64
@@ -12,6 +12,7 @@ url: https://mybeacon.co.za
 startup: application
 boot: auto
 host_network: true
+hassio_api: true
 ingress: true
 ingress_port: 8127
 panel_icon: mdi:shield-home
