@@ -11,6 +11,7 @@ import json
 import signal
 import sys
 import time
+import uuid
 
 from app.config import Config
 from app.ha_client import HAClient
@@ -23,6 +24,7 @@ config = Config()
 cloudflared_process = None
 HA_CONFIG_PATH = "/config/configuration.yaml"
 ONBOARDING_STATE_PATH = "/data/onboarding_state.json"
+MANUAL_BACKUP_ONCE_STATE_PATH = "/data/managed-backup/manual-once-state.json"
 REQUIRED_PROXIES = {"127.0.0.1", "::1", "172.30.32.0/23"}
 onboarding_status = "starting"
 onboarding_error = None
@@ -624,6 +626,108 @@ async def run_once(ha: HAClient, platform: PlatformClient) -> dict:
     return report
 
 
+def utc_timestamp() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def safe_error_category(exc: Exception) -> str:
+    return type(exc).__name__
+
+
+def load_manual_backup_once_state(path: str = MANUAL_BACKUP_ONCE_STATE_PATH) -> dict:
+    try:
+        if not os.path.isfile(path):
+            return {}
+        with open(path, "r") as f:
+            loaded = json.load(f) or {}
+        if not isinstance(loaded, dict):
+            logger.warning("Manual backup one-shot state file is not a mapping; treating as unarmed")
+            return {"state_error": "invalid_shape"}
+        return loaded
+    except Exception as e:
+        logger.warning("Could not load manual backup one-shot state: %s", type(e).__name__)
+        return {"state_error": type(e).__name__}
+
+
+def save_manual_backup_once_state(state: dict, path: str = MANUAL_BACKUP_ONCE_STATE_PATH):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        temp_path = f"{path}.tmp"
+        with open(temp_path, "w") as f:
+            json.dump(state, f, sort_keys=True)
+        os.replace(temp_path, path)
+    except Exception as e:
+        logger.warning("Could not save manual backup one-shot state: %s", type(e).__name__)
+
+
+def prepare_manual_backup_once(manual_backup_once: bool, path: str = MANUAL_BACKUP_ONCE_STATE_PATH) -> tuple[bool, str | None]:
+    state = load_manual_backup_once_state(path)
+    previous_trigger = state.get("trigger_state") is True
+    attempted = state.get("attempted") is True
+
+    if not manual_backup_once:
+        armed_state = {
+            "trigger_state": False,
+            "attempted": False,
+            "result": "armed",
+            "updated_at": utc_timestamp(),
+        }
+        save_manual_backup_once_state(armed_state, path)
+        if previous_trigger or attempted:
+            logger.info("Manual backup one-shot trigger reset and re-armed")
+        else:
+            logger.info("Manual backup one-shot trigger armed")
+        return False, None
+
+    if previous_trigger and attempted:
+        logger.info("Manual backup one-shot trigger already consumed; skipping")
+        return False, state.get("operation_id")
+
+    operation_id = uuid.uuid4().hex
+    save_manual_backup_once_state({
+        "trigger_state": True,
+        "attempted": True,
+        "operation_id": operation_id,
+        "attempted_at": utc_timestamp(),
+        "result": "running",
+    }, path)
+    logger.info("Manual backup one-shot trigger activated operation_id=%s", operation_id)
+    return True, operation_id
+
+
+async def run_manual_backup_once_background(operation_id: str, path: str = MANUAL_BACKUP_ONCE_STATE_PATH):
+    logger.info("Manual backup workflow started operation_id=%s", operation_id)
+    try:
+        from app.manual_backup import run_manual_backup
+        result = await run_manual_backup()
+        safe_result = {
+            "trigger_state": True,
+            "attempted": True,
+            "operation_id": operation_id,
+            "attempted_at": load_manual_backup_once_state(path).get("attempted_at"),
+            "completed_at": utc_timestamp(),
+            "result": "completed",
+            "backup_id": result.get("backup_id"),
+            "ha_backup_slug": result.get("ha_backup_slug"),
+            "size_bytes": result.get("size_bytes"),
+            "sha256": result.get("sha256"),
+        }
+        save_manual_backup_once_state(safe_result, path)
+        logger.info("Manual backup workflow completed operation_id=%s backup_id=%s", operation_id, result.get("backup_id"))
+    except Exception as e:
+        save_manual_backup_once_state({
+            "trigger_state": True,
+            "attempted": True,
+            "operation_id": operation_id,
+            "failed_at": utc_timestamp(),
+            "result": "failed",
+            "error_category": safe_error_category(e),
+        }, path)
+        logger.error("Manual backup workflow failed operation_id=%s error_category=%s", operation_id, safe_error_category(e))
+
+
+
 async def main_loop():
     logger.info("Burghscape Agent starting")
     logger.info("Platform: %s", config.platform_url)
@@ -639,6 +743,9 @@ async def main_loop():
     signal.signal(signal.SIGINT, handle_signal)
 
     tunnel_setup_done = False
+    should_run_manual_backup, manual_backup_operation_id = prepare_manual_backup_once(config.manual_backup_once)
+    if should_run_manual_backup and manual_backup_operation_id:
+        asyncio.create_task(run_manual_backup_once_background(manual_backup_operation_id))
 
     while True:
         try:

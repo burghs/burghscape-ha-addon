@@ -60,6 +60,7 @@ class Config:
         self.backup_enabled = _get_bool_env("BACKUP_ENABLED", False)
         self.backup_interval_hours = _get_int_env("BACKUP_INTERVAL_HOURS", 24)
         self.backup_max_part_size_mb = _get_int_env("BACKUP_MAX_PART_SIZE_MB", 100)
+        self.manual_backup_once = _get_bool_env("MANUAL_BACKUP_ONCE", False)
 
     def validate(self):
         """Validate configuration."""

@@ -17,7 +17,18 @@ def load_config():
             "subscription_token": "SUBSCRIPTION_TOKEN",
             "instance_name": "INSTANCE_NAME",
             "heartbeat_interval": "HEARTBEAT_INTERVAL",
+            "monitor_entities": "MONITOR_ENTITIES",
+            "monitor_disk": "MONITOR_DISK",
+            "monitor_automations": "MONITOR_AUTOMATIONS",
+            "monitor_updates": "MONITOR_UPDATES",
+            "monitor_backups": "MONITOR_BACKUPS",
+            "monitor_frigate": "MONITOR_FRIGATE",
+            "report_days": "REPORT_DAYS",
             "ha_token": "HA_TOKEN",
+            "backup_enabled": "BACKUP_ENABLED",
+            "backup_interval_hours": "BACKUP_INTERVAL_HOURS",
+            "backup_max_part_size_mb": "BACKUP_MAX_PART_SIZE_MB",
+            "manual_backup_once": "MANUAL_BACKUP_ONCE",
             "version": "VERSION",
         }
         for key, env_var in env_map.items():
