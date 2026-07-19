@@ -151,6 +151,13 @@ PORTAL_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- Managed Backup Status -->
+        <div class="card rounded-2xl p-6 mb-6">
+          <div class="flex items-center justify-between mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backup</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Automatic backups</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last successful backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
+        </div>
+        <script>fetch("/api/portal/managed-backup-state",{credentials:"include"}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Disabled";document.getElementById("managed-backup-success").textContent=data.last_success?new Date(data.last_success.completed_at).toLocaleString()+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?new Date(data.last_failure.failed_at).toLocaleString()+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}).catch(()=>{document.getElementById("managed-backup-state").textContent="Unavailable"})</script>
+
         <!-- System Resources + Backup Status -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- System Stats -->

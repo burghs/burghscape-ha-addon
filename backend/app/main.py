@@ -15,7 +15,7 @@ from sqlalchemy import select, func, update
 
 from config import get_settings
 from database import init_db, engine, async_session
-from routers import clients, instances, backups, support, monitoring, auth, agent, tunnels, portal, portal_users, branding
+from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding
 from middleware import AdminAuthMiddleware
 from admin_auth import admin_auth_router
 from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken
@@ -233,6 +233,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])
 app.include_router(clients.router, prefix="/api/clients", tags=["Clients"])
 app.include_router(instances.router, prefix="/api/instances", tags=["HA Instances"])
 app.include_router(backups.router, prefix="/api/backups", tags=["Backups"])
+app.include_router(backup_state.router, tags=["Managed Backup State"])
 app.include_router(support.router, prefix="/api/support", tags=["Support"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
 app.include_router(tunnels.router, prefix="/api/tunnels", tags=["Tunnels"])

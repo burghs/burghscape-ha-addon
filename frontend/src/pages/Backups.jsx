@@ -5,14 +5,19 @@ export default function Backups() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [managedState, setManagedState] = useState([]);
 
   const fetchBackups = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/backups", { credentials: "include" });
+      const [res, stateRes] = await Promise.all([
+        fetch("/api/admin/backups", { credentials: "include" }),
+        fetch("/api/admin/managed-backup-state", { credentials: "include" }),
+      ]);
       if (res.ok) {
         const data = await res.json();
         setBackups(data.backups || []);
       }
+      if (stateRes.ok) { const data = await stateRes.json(); setManagedState(data.clients || []); }
       setLastUpdated(new Date());
     } catch (err) {
       setError(err.message);
@@ -52,6 +57,17 @@ export default function Backups() {
             <span className="text-xs text-gray-500">Live</span>
           </div>
         </div>
+      </div>
+
+      <h2 className="text-white font-semibold mb-3">Managed Home Assistant Backups</h2>
+      <div className="space-y-3 mb-8">
+        {managedState.map((item) => { const op = item.current_operation; return (
+          <div key={item.client_id} className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+            <div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">{op?.state || "No operation"}</span></div>
+            <div className="text-sm text-gray-500 mt-2">Automatic: {item.automatic_enabled ? "Enabled" : "Disabled"} · Last success: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div>
+          </div>
+        ); })}
+        {managedState.length === 0 && <div className="text-gray-400">No managed backup state reported.</div>}
       </div>
 
       {backups.length === 0 ? (

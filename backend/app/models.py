@@ -125,6 +125,20 @@ class Backup(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
     client = relationship("Client", back_populates="backups")
+class BackupOperation(Base):
+    __tablename__ = "backup_operations"
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    operation_id = Column(String(64), nullable=False, unique=True, index=True)
+    state = Column(String(20), nullable=False)
+    automatic_enabled = Column(Boolean, default=False, nullable=False)
+    ha_backup_slug = Column(String(255))
+    backup_id = Column(Integer, ForeignKey("backups.id"))
+    error_category = Column(String(100))
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime)
+    failed_at = Column(DateTime)
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(Integer, primary_key=True, index=True)
