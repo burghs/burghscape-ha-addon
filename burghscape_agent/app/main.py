@@ -700,7 +700,7 @@ async def run_manual_backup_once_background(operation_id: str, path: str = MANUA
     logger.info("Manual backup workflow started operation_id=%s", operation_id)
     try:
         from app.manual_backup import run_manual_backup
-        result = await run_manual_backup()
+        result = await run_manual_backup(operation_id)
         safe_result = {
             "trigger_state": True,
             "attempted": True,
@@ -716,6 +716,11 @@ async def run_manual_backup_once_background(operation_id: str, path: str = MANUA
         save_manual_backup_once_state(safe_result, path)
         logger.info("Manual backup workflow completed operation_id=%s backup_id=%s", operation_id, result.get("backup_id"))
     except Exception as e:
+        try:
+            async with PlatformClient(config) as platform:
+                await platform.report_backup_state(operation_id, "failed", error_category=safe_error_category(e))
+        except Exception as report_error:
+            logger.warning("Could not report backup failure state: %s", type(report_error).__name__)
         save_manual_backup_once_state({
             "trigger_state": True,
             "attempted": True,

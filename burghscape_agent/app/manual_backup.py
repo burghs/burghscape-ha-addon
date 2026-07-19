@@ -249,7 +249,7 @@ class SupervisorBackupClient:
         return size, hasher.hexdigest()
 
 
-async def run_manual_backup() -> dict:
+async def run_manual_backup(operation_id: str) -> dict:
     config = Config()
     token = get_supervisor_token()
     if not token:
@@ -268,12 +268,14 @@ async def run_manual_backup() -> dict:
         before_slugs = {b.get("slug") for b in before if b.get("slug")}
 
         states.append("creating")
+        await platform.report_backup_state(operation_id, "creating")
         create_response = await supervisor.create_full_backup(name)
         created = await supervisor.wait_for_new_backup(before_slugs, name, create_response)
         slug = created.get("slug")
         if not slug:
             raise RuntimeError("Created backup has no slug")
         states.append("created")
+        await platform.report_backup_state(operation_id, "downloading", ha_backup_slug=slug)
 
         filename = safe_backup_filename(slug)
         temp_dir = Path("/data/managed-backup")
@@ -290,6 +292,7 @@ async def run_manual_backup() -> dict:
             raise RuntimeError("Downloaded backup exceeds platform maximum size")
 
         states.append("uploading")
+        await platform.report_backup_state(operation_id, "uploading", ha_backup_slug=slug)
         upload_started = time.time()
         upload_result = await platform.upload_backup_file(
             str(temp_path),
@@ -301,6 +304,7 @@ async def run_manual_backup() -> dict:
         if upload_result.get("error"):
             raise RuntimeError(f"Platform upload failed: {upload_result.get('error')}")
         states.append("completed")
+        await platform.report_backup_state(operation_id, "completed", ha_backup_slug=slug, backup_id=upload_result.get("backup_id"))
 
         try:
             temp_path.unlink()
@@ -334,7 +338,7 @@ def main():
     parser.add_argument("--json", action="store_true", help="Print machine-readable result JSON")
     args = parser.parse_args()
     try:
-        result = asyncio.run(run_manual_backup())
+        result = asyncio.run(run_manual_backup("manual-cli-" + str(int(time.time()))))
         if args.json:
             print(json.dumps(result, sort_keys=True))
         else:

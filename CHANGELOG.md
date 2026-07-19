@@ -1,3 +1,8 @@
+# 0.2.52
+
+- Report managed backup transitions to the platform and expose whether automatic backups are enabled.
+- Preserve manual-only behavior; recurring scheduling, retention, and restore remain unavailable.
+
 # Changelog
 
 ## v0.2.26 (2026-07-03)

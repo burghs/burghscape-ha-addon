@@ -55,6 +55,17 @@ class PlatformClient:
                 logger.error(f"Failed to get tunnel config: {resp.status} {body}")
                 return {}
 
+    async def report_backup_state(self, operation_id: str, state: str, **details) -> dict:
+        """Report a safe managed-backup state transition."""
+        payload = {"operation_id": operation_id, "state": state,
+                   "automatic_enabled": bool(self.config.backup_enabled), **details}
+        async with self.session.post("/api/backups/state", json=payload) as resp:
+            if resp.status in (200, 201):
+                return await resp.json()
+            body = await resp.text()
+            logger.error("Backup state report rejected: HTTP %s %s", resp.status, body[:200])
+            return {"error": f"HTTP {resp.status}"}
+
     async def get_backup_config(self) -> dict:
         """Fetch effective backup upload limits from the platform."""
         async with self.session.get("/api/backups/config") as resp:
