@@ -1,5 +1,4 @@
-"""Local filesystem storage backend (for development/testing)."""
-import os
+"""Local filesystem storage backend for tenant-scoped backup objects."""
 import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -7,73 +6,72 @@ import aiofiles
 from datetime import datetime
 
 from .base import (
-    StorageBackend, 
-    UploadPart, 
-    MultipartUpload, 
-    UploadResult, 
-    BackupObject
+    StorageBackend,
+    UploadPart,
+    MultipartUpload,
+    UploadResult,
+    BackupObject,
 )
 
 
 class LocalStorageBackend(StorageBackend):
-    """Local filesystem storage backend."""
+    """Local filesystem storage rooted at /backups/client-backups by default."""
 
     def __init__(self, config: Dict[str, Any]):
-        self.storage_path = Path(config.get("path", "/backups/client-backups"))
+        self.storage_path = Path(config.get("path", "/backups/client-backups")).resolve()
         self.storage_path.mkdir(parents=True, exist_ok=True)
-        self.base_url = config.get("base_url", "http://localhost:8000/static/backups")
 
     def _full_path(self, key: str) -> Path:
-        """Convert storage key to filesystem path."""
-        safe_key = key.replace("../", "").replace("./", "")
-        return self.storage_path / safe_key
+        """Convert a tenant-scoped storage key to a safe filesystem path."""
+        candidate = (self.storage_path / key).resolve()
+        try:
+            candidate.relative_to(self.storage_path)
+        except ValueError:
+            raise ValueError("storage key resolves outside backup root")
+        return candidate
 
     async def create_multipart_upload(
-        self, 
-        key: str, 
+        self,
+        key: str,
         content_type: str = "application/gzip",
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
     ) -> MultipartUpload:
         path = self._full_path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
         import time
         upload_id = f"local_{int(time.time())}"
-        
-        upload_url = f"{self.base_url}/{key}?upload_id={upload_id}"
-        
-        parts = [UploadPart(part_number=1, upload_url=upload_url)]
-        
-        return MultipartUpload(upload_id=upload_id, key=key, parts=parts)
+        upload_url = f"/api/backups/upload/local/{upload_id}/parts/1"
+        return MultipartUpload(
+            upload_id=upload_id,
+            key=key,
+            parts=[UploadPart(part_number=1, upload_url=upload_url)],
+        )
 
     async def get_more_presigned_parts(
-        self, 
-        upload_id: str, 
-        key: str, 
-        start_part: int, 
-        count: int = 100
+        self,
+        upload_id: str,
+        key: str,
+        start_part: int,
+        count: int = 100,
     ) -> List[UploadPart]:
+        self._full_path(key)
         return []
 
     async def complete_multipart_upload(
-        self, 
-        upload_id: str, 
-        key: str, 
-        parts: List[Dict[str, Any]]
+        self,
+        upload_id: str,
+        key: str,
+        parts: List[Dict[str, Any]],
     ) -> UploadResult:
         path = self._full_path(key)
+        if not path.is_file():
+            raise FileNotFoundError("backup object not found")
         async with aiofiles.open(path, "rb") as f:
             content = await f.read()
-        
         size = len(content)
         etag = hashlib.md5(content).hexdigest()
-        
-        return UploadResult(
-            key=key,
-            size=size,
-            etag=f'"{etag}"',
-            checksum=None,
-        )
+        checksum = hashlib.sha256(content).hexdigest()
+        return UploadResult(key=key, size=size, etag=f'"{etag}"', checksum=checksum)
 
     async def abort_multipart_upload(self, upload_id: str, key: str) -> bool:
         path = self._full_path(key)
@@ -85,17 +83,13 @@ class LocalStorageBackend(StorageBackend):
             return False
 
     async def generate_presigned_download_url(
-        self, 
-        key: str, 
+        self,
+        key: str,
         expires_in: int = 3600,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
     ) -> str:
-        base_url = self.base_url.rstrip("/")
-        url = f"{base_url}/{key}"
-        if filename:
-            url += f"?response-content-disposition=attachment;filename={filename}"
-        url += f"&expires_in={expires_in}"
-        return url
+        self._full_path(key)
+        return "/api/backups/download-file"
 
     async def delete_object(self, key: str) -> bool:
         path = self._full_path(key)
@@ -107,10 +101,9 @@ class LocalStorageBackend(StorageBackend):
             return False
 
     async def list_objects(self, prefix: str = "", max_keys: int = 100) -> List[BackupObject]:
-        prefix_path = self.storage_path / prefix if prefix else self.storage_path
+        prefix_path = self._full_path(prefix) if prefix else self.storage_path
         objects = []
         count = 0
-        
         for file_path in prefix_path.rglob("*"):
             if file_path.is_file() and count < max_keys:
                 stat = file_path.stat()
@@ -122,13 +115,12 @@ class LocalStorageBackend(StorageBackend):
                     metadata={},
                 ))
                 count += 1
-                
         return objects
 
     async def get_object_metadata(self, key: str) -> Optional[BackupObject]:
         path = self._full_path(key)
         try:
-            if path.exists():
+            if path.exists() and path.is_file():
                 stat = path.stat()
                 return BackupObject(
                     key=key,
@@ -140,4 +132,3 @@ class LocalStorageBackend(StorageBackend):
             return None
         except Exception:
             return None
-

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
     BACKUP_RETENTION_DAYS: int = 30
+    BACKUP_LOCAL_PATH: str = "/backups/client-backups"
+    BACKUP_MAX_SIZE_BYTES: int = 10 * 1024 * 1024 * 1024
+    BACKUP_MAX_PART_SIZE_BYTES: int = 100 * 1024 * 1024
     BACKUP_SFTP_HOST: str = ""
     BACKUP_SFTP_USER: str = ""
     BACKUP_SFTP_PATH: str = ""
