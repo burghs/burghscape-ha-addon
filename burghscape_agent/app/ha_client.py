@@ -221,31 +221,48 @@ class HAClient:
         return backup
 
     def _parse_backup_list(self, backups_list: list) -> dict:
-        """Parse a list of backup dicts into our standard backup format."""
+        """Parse a list of backup dicts into the standard backup telemetry shape."""
         backup = {
-            "enabled": True,
+            "enabled": False,
             "last_backup": None,
-            "status": "ok",
-            "file_count": len(backups_list),
+            "status": "unknown",
+            "file_count": 0,
             "total_size_bytes": 0,
             "last_backup_timestamp": None,
             "next_backup": None,
             "error": None,
         }
-        from datetime import datetime, timezone, timedelta
-        
-        # Sort by date descending
-        sorted_bk = sorted(backups_list, key=lambda b: b.get("date", ""), reverse=True)
-        latest = sorted_bk[0]
-        
-        total = sum(b.get("size", 0) for b in sorted_bk if b.get("size"))
+        from datetime import datetime, timedelta
+
+        if not isinstance(backups_list, list) or not backups_list:
+            return backup
+
+        normalized = [b for b in backups_list if isinstance(b, dict)]
+        if not normalized:
+            backup["error"] = "No valid backup entries returned"
+            return backup
+
+        backup["enabled"] = True
+        backup["status"] = "ok"
+        backup["file_count"] = len(normalized)
+
+        total = 0
+        for item in normalized:
+            try:
+                size = int(float(item.get("size", 0) or 0))
+                if size > 0:
+                    total += size
+            except (ValueError, TypeError):
+                continue
         backup["total_size_bytes"] = total
-        
-        backup_date = latest.get("date", "")
+
+        sorted_bk = sorted(normalized, key=lambda b: str(b.get("date") or b.get("created_at") or ""), reverse=True)
+        latest = sorted_bk[0]
+        backup_date = latest.get("date") or latest.get("created_at") or latest.get("last_modified")
         if backup_date:
             backup["last_backup_timestamp"] = backup_date
             try:
-                dt = datetime.fromisoformat(backup_date.replace("Z", "+00:00"))
+                dt = datetime.fromisoformat(str(backup_date).replace("Z", "+00:00"))
                 delta = datetime.now().astimezone() - dt
                 if delta.days > 0:
                     backup["last_backup"] = f"{delta.days}d ago"
@@ -253,19 +270,15 @@ class HAClient:
                     backup["last_backup"] = f"{delta.seconds // 3600}h ago"
                 else:
                     backup["last_backup"] = f"{delta.seconds // 60}m ago"
-                
-                # Next backup estimate (daily)
                 next_dt = dt + timedelta(days=1)
-                if next_dt > datetime.now().astimezone():
-                    remaining = (next_dt - datetime.now().astimezone()).total_seconds()
-                    if remaining < 3600:
-                        backup["next_backup"] = f"In {int(remaining // 60)}m"
-                    else:
-                        backup["next_backup"] = f"In {int(remaining // 3600)}h"
-            except (nValueError, TypeError):
+                now = datetime.now().astimezone()
+                if next_dt > now:
+                    remaining = (next_dt - now).total_seconds()
+                    backup["next_backup"] = f"In {int(remaining // 60)}m" if remaining < 3600 else f"In {int(remaining // 3600)}h"
+            except (ValueError, TypeError):
                 backup["last_backup"] = str(backup_date)[:19]
-        
-        return backum
+
+        return backup
     def get_backup_status(self, states: list) -> dict:
         """Extract OneDrive backup status from HA sensors (lavinir/hassio-onedrive-backup add-on)."""
         backup = {

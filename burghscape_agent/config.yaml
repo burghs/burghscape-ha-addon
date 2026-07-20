@@ -1,6 +1,6 @@
 name: Burghscape Agent
 description: Central monitoring agent for Burghscape smart home management platform
-version: "0.2.52"
+version: "0.2.53"
 slug: burghscape_agent
 arch:
 - aarch64
@@ -56,4 +56,3 @@ schema:
   backup_interval_hours: int(1,168)
   backup_max_part_size_mb: int(1,500)
   manual_backup_once: bool
-
