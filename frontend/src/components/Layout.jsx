@@ -2,6 +2,7 @@ import { Link, useLocation, Outlet } from "react-router-dom";
 import { Home, Users, Cpu, Database, LifeBuoy, Settings, Menu, X, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../hooks/AuthContext";
+import { BrandLogo } from "./ui";
 
 const navItems = [
   { path: "/dashboard", icon: Home, label: "Dashboard" },
@@ -18,27 +19,23 @@ export default function Layout() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Mobile overlay */}
+    <div className="flex min-h-dvh overflow-hidden bg-gray-950 text-gray-100">
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 border-r border-gray-800 transform transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:static`}>
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-800">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Home className="w-5 h-5 text-white" />
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 max-w-[86vw] transform border-r border-white/10 bg-gray-950/95 shadow-2xl shadow-black/40 transition-transform lg:static lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="relative border-b border-white/10 px-4 py-4">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-text/60 to-transparent" />
+          <div className="flex min-w-0 items-center gap-3">
+            <BrandLogo className="min-w-0 flex-1" imageClassName="h-10 w-10" subtitle="MyBeacon Portal" />
+            <button className="ml-auto rounded-lg p-2 text-muted-text transition hover:bg-white/10 hover:text-white lg:hidden" onClick={() => setSidebarOpen(false)}>
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <div>
-            <h1 className="font-bold text-white text-sm">Burghscape</h1>
-            <p className="text-xs text-gray-400">Home Cloud</p>
-          </div>
-          <button className="ml-auto lg:hidden text-gray-400" onClick={() => setSidebarOpen(false)}>
-            <X className="w-5 h-5" />
-          </button>
         </div>
-        <nav className="px-3 py-4 space-y-1">
+
+        <nav className="space-y-1 px-3 py-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname.startsWith(item.path);
@@ -47,40 +44,43 @@ export default function Layout() {
                 key={item.path}
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-blue-600/20 text-blue-400" : "text-gray-400 hover:bg-gray-800 hover:text-white"}`}
+                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition duration-200 ${isActive ? "border-primary/30 bg-gradient-to-r from-primary/25 to-purple-600/10 text-white shadow-lg shadow-primary/10" : "border-transparent text-muted-text hover:border-white/10 hover:bg-white/[0.06] hover:text-white"}`}
               >
-                <Icon className="w-5 h-5" />
+                <Icon className="h-5 w-5" />
                 {item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-800">
+
+        <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-4">
           <button
             onClick={logout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white w-full transition-colors"
+            className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-muted-text transition duration-200 hover:border-white/10 hover:bg-white/[0.06] hover:text-white"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="h-5 w-5" />
             Sign Out
           </button>
         </div>
       </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center gap-4">
-          <button className="lg:hidden text-gray-400" onClick={() => setSidebarOpen(true)}>
-            <Menu className="w-5 h-5" />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 bg-gray-950/85 px-3 py-3 backdrop-blur sm:gap-4 sm:px-5">
+          <button className="rounded-lg p-2 text-muted-text transition hover:bg-white/10 hover:text-white lg:hidden" onClick={() => setSidebarOpen(true)}>
+            <Menu className="h-5 w-5" />
           </button>
+          <div className="hidden sm:block">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-text">Burghscape Home Cloud</p>
+          </div>
           <div className="flex-1" />
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400">{user?.username || 'Admin'}</span>
-            <div className="w-8 h-8 bg-blue-900 rounded-full flex items-center justify-center">
-              <span className="text-xs font-medium text-blue-300">{(user?.username || 'A')[0].toUpperCase()}</span>
+          <div className="min-w-0 max-w-full flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-3 pr-1">
+            <span className="truncate text-sm text-gray-300">{user?.username || 'Admin'}</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-subtle ring-1 ring-primary/30">
+              <span className="text-xs font-semibold text-primary-text">{(user?.username || 'A')[0].toUpperCase()}</span>
             </div>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-950">
+        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.12),transparent_34%),#030712] p-3 sm:p-6 lg:p-7">
           <Outlet />
         </main>
       </div>

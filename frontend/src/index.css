@@ -3,26 +3,124 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-page: #030712;
+    --color-surface: #111827;
+    --color-surface-muted: #1f2937;
+    --color-border: #374151;
+    --color-text: #f9fafb;
+    --color-text-muted: #9ca3af;
+    --color-primary: #2563eb;
+    --color-primary-hover: #1d4ed8;
+    --radius-control: 0.5rem;
+    --radius-card: 0.75rem;
+    --radius-feature: 1rem;
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.22);
+    --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.28), 0 8px 10px -6px rgb(0 0 0 / 0.28);
+  }
+
+  html, body, #root {
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+
+  input, select, textarea {
+    font-size: 16px;
   }
 }
 
 @layer components {
-  .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  .page-shell { @apply space-y-6; }
+  .page-toolbar { @apply mb-6 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between; }
+  .page-title { @apply text-2xl font-semibold tracking-tight text-white sm:text-3xl; }
+  .page-title-light { @apply text-2xl font-semibold tracking-tight text-white sm:text-3xl; }
+  .page-subtitle { @apply mt-1 text-sm text-muted-text; }
+
+  .brand-shell {
+    @apply relative overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 shadow-2xl shadow-black/30;
   }
-  .btn-primary {
-    @apply bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors font-medium;
+
+  .brand-shell::before {
+    content: '';
+    @apply pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-text/60 to-transparent;
   }
-  .btn-secondary {
-    @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors font-medium;
+
+  .app-card {
+    @apply min-w-0 rounded-2xl border border-white/10 bg-gray-900/85 p-4 shadow-xl shadow-black/20 backdrop-blur transition duration-200 sm:p-6;
   }
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+
+  .app-card:hover { @apply border-white/15 shadow-primary/5; }
+  .app-card-compact { @apply p-5; }
+  .app-card-muted { @apply rounded-2xl border border-white/10 bg-gray-900/55 p-5 shadow-lg shadow-black/20; }
+  .stat-card { @apply rounded-2xl border border-white/10 bg-gradient-to-br from-gray-900 to-gray-950 p-5 shadow-xl shadow-black/20; }
+  .modal-card { @apply max-h-[calc(100dvh-2rem)] min-w-0 overflow-y-auto rounded-2xl border border-white/10 bg-gray-950 text-gray-100 shadow-2xl shadow-black/50; }
+  .modal-backdrop { @apply fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-4; }
+  .info-card-light { @apply rounded-xl border border-white/10 bg-white/[0.04] p-4 text-gray-100; }
+  .section-card-light { @apply rounded-xl border border-white/10 bg-gray-900/80 p-4 text-gray-100; }
+
+  .btn { @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition duration-200 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply bg-gradient-to-r from-primary to-purple-600 text-white shadow-lg shadow-primary/20 hover:from-primary-hover hover:to-purple-700; }
+  .btn-secondary { @apply border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10; }
+  .btn-success { @apply bg-success text-white hover:bg-success-hover; }
+  .btn-danger { @apply bg-danger text-white hover:bg-danger-hover; }
+  .btn-warning { @apply bg-warning text-white hover:bg-warning-hover; }
+  .btn-ghost { @apply text-muted-text hover:bg-white/10 hover:text-white; }
+  .btn-link { @apply text-sm font-medium text-primary-text hover:text-white transition-colors; }
+  .action-link { @apply text-sm font-medium transition-colors hover:text-white; }
+
+  .form-input-dark,
+  .form-input-dark-lg,
+  .form-input,
+  .form-input-attached-left {
+    @apply w-full border border-white/10 bg-gray-950/70 text-gray-100 placeholder-muted-text focus:outline-none focus:ring-2 focus:ring-primary/60 focus:border-primary/70;
   }
-  .badge-green { @apply bg-green-100 text-green-800; }
-  .badge-yellow { @apply bg-yellow-100 text-yellow-800; }
-  .badge-red { @apply bg-red-100 text-red-800; }
-  .badge-blue { @apply bg-blue-100 text-blue-800; }
+
+  .form-input-dark { @apply rounded-lg px-3 py-2 text-base; }
+  .form-input-dark-lg { @apply rounded-lg px-4 py-3 text-base; }
+  .form-input { @apply rounded-lg px-3 py-2 text-base sm:text-sm; }
+  .form-input-attached-left { @apply rounded-l-lg px-3 py-2 text-base sm:text-sm; }
+  .form-addon-right { @apply rounded-r-lg border border-l-0 border-white/10 bg-white/5 px-3 py-2 text-sm text-muted-text; }
+  .form-label { @apply mb-1 block text-sm font-medium text-gray-300; }
+  .form-checkbox { @apply h-4 w-4 rounded border-white/20 bg-gray-950 text-primary focus:ring-primary; }
+
+  .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .badge-primary { @apply bg-primary/20 text-primary-text ring-1 ring-primary/25; }
+  .badge-secondary { @apply bg-white/10 text-gray-300 ring-1 ring-white/10; }
+  .badge-success { @apply bg-success/15 text-success-text ring-1 ring-success/25; }
+  .badge-warning { @apply bg-warning/15 text-warning-text ring-1 ring-warning/25; }
+  .badge-danger { @apply bg-danger/15 text-danger-text ring-1 ring-danger/25; }
+  .badge-info { @apply bg-info/15 text-info-text ring-1 ring-info/25; }
+  .badge-neutral { @apply bg-white/10 text-muted-text ring-1 ring-white/10; }
+  .badge-primary-light { @apply bg-primary/20 text-primary-text ring-1 ring-primary/25; }
+  .badge-secondary-light { @apply bg-white/10 text-gray-300 ring-1 ring-white/10; }
+  .badge-success-light { @apply bg-success/15 text-success-text ring-1 ring-success/25; }
+  .badge-warning-light { @apply bg-warning/15 text-warning-text ring-1 ring-warning/25; }
+  .badge-danger-light { @apply bg-danger/15 text-danger-text ring-1 ring-danger/25; }
+  .badge-info-light { @apply bg-info/15 text-info-text ring-1 ring-info/25; }
+  .badge-neutral-light { @apply bg-white/10 text-muted-text ring-1 ring-white/10; }
+
+  .alert-error { @apply rounded-lg border border-danger/40 bg-danger/10 p-4 text-danger-text; }
+  .alert-success { @apply rounded-lg border border-success/40 bg-success/10 p-4 text-success-text; }
+  .loading-state { @apply flex h-64 items-center justify-center text-muted-text; }
+  .empty-state { @apply rounded-2xl border border-dashed border-white/10 bg-white/[0.03] py-12 text-center text-muted-text; }
+  .live-indicator { @apply flex items-center gap-1.5 text-xs text-muted-text; }
+
+  .status-dot { @apply inline-block rounded-full; }
+  .status-dot-sm { @apply h-2 w-2; }
+  .status-dot-md { @apply h-3 w-3; }
+  .status-dot-lg { @apply h-4 w-4; }
+
+  .progress-track { @apply h-2 w-full overflow-hidden rounded-full bg-white/10; }
+  .progress-fill { @apply h-full rounded-full transition-all; }
+
+  .table-head { @apply bg-white/[0.03]; }
+  .table-body { @apply divide-y divide-white/10 bg-gray-950/40; }
+  .table-th { @apply whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-text; }
+  .table-td { @apply px-4 py-3 align-top; }
+  .table-empty { @apply px-4 py-8 text-center text-muted-text; }
 }

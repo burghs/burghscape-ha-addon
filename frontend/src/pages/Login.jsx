@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/AuthContext';
+import { BrandLogo, Button } from '../components/ui';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -22,16 +23,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-2xl p-8 border border-gray-700 w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-bold text-white">Burghscape</h1>
-          <p className="text-gray-400 text-sm mt-1">Management Portal</p>
+    <div className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.18),transparent_34%),#030712] p-4 [padding-bottom:max(1rem,env(safe-area-inset-bottom))] [padding-top:max(1rem,env(safe-area-inset-top))]">
+      <div className="brand-shell w-full max-w-sm p-5 sm:p-8">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <BrandLogo className="flex-col gap-4" imageClassName="h-20 max-w-[8rem] sm:h-24 sm:max-w-[9rem]" subtitle="MyBeacon Management Portal" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -41,7 +36,7 @@ export default function Login() {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="form-input-dark-lg"
               required
             />
           </div>
@@ -51,24 +46,20 @@ export default function Login() {
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="form-input-dark-lg"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-900/50 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-2">
+            <div className="alert-error py-2 text-sm">
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition"
-          >
+          <Button type="submit" disabled={loading} className="w-full py-3">
             {loading ? 'Signing in...' : 'Sign In'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

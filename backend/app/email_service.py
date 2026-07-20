@@ -73,7 +73,20 @@ def send_welcome_email(to_email: str, client_name: str, temp_password: str, clie
     else:
         actual_to = to_email
 
-    subject = f"Welcome to Burghscape — Your Smart Home Portal is Ready 🏠"
+    portal_url = client_portal_url.rstrip("/")
+    getting_started_url = f"{portal_url}/portal/getting-started"
+    remote_url = ha_external_url or "Your Burghscape Remote URL will activate after the Burghscape Agent connects."
+    subject = "Welcome to Burghscape Home Cloud"
+
+    password_row = ""
+    password_text = ""
+    if temp_password:
+        password_row = f"""
+                            <tr><td style="padding:10px 0;">
+                                <span style="color:#94a3b8; font-size:13px;">Temporary Password</span><br>
+                                <code style="background:rgba(139,92,246,0.16); color:#ddd6fe; padding:8px 12px; border-radius:8px; font-size:15px; letter-spacing:1.5px; display:inline-block; margin-top:5px;">{temp_password}</code>
+                            </td></tr>"""
+        password_text = f"Temporary Password: {temp_password}\n"
 
     html = f"""
 <!DOCTYPE html>
@@ -81,99 +94,68 @@ def send_welcome_email(to_email: str, client_name: str, temp_password: str, clie
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to Burghscape</title>
+    <title>Welcome to Burghscape Home Cloud</title>
 </head>
-<body style="margin:0; padding:0; background:#0a0a1a; font-family:'Segoe UI',Arial,sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a1a; padding:40px 20px;">
+<body style="margin:0; padding:0; background:#070817; font-family:'Segoe UI',Arial,sans-serif; color:#e5e7eb;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#070817; padding:36px 16px;">
         <tr><td align="center">
-            <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;">
-                <!-- Header -->
-                <tr><td style="background:linear-gradient(135deg,#8b5cf6,#6d28d9); border-radius:16px 16px 0 0; padding:40px 30px; text-align:center;">
-                    <img src="https://mybeacon.co.za/static/brand/logo.png" alt="Burghscape" style="height:40px;margin:0 auto 8px;display:block">
-                    <h1 style="color:#fff; margin:0; font-size:24px; letter-spacing:-0.5px;">Burghscape Pty Ltd</h1>
-                    <p style="color:rgba(255,255,255,0.7); margin:8px 0 0; font-size:14px;">Smart Home Management Platform</p>
+            <table width="600" cellpadding="0" cellspacing="0" style="width:100%; max-width:600px; border-collapse:separate; border-spacing:0;">
+                <tr><td style="background:#0f1024; border:1px solid rgba(139,92,246,0.25); border-bottom:none; border-radius:18px 18px 0 0; padding:34px 28px 26px; text-align:center;">
+                    <img src="https://mybeacon.co.za/static/brand/burghscape-shield-email.png" alt="Burghscape" style="height:56px; width:auto; max-width:92px; object-fit:contain; display:block; margin:0 auto 14px;">
+                    <h1 style="color:#ffffff; margin:0; font-size:25px; line-height:1.25;">Welcome to Burghscape Home Cloud</h1>
+                    <p style="color:#a78bfa; margin:8px 0 0; font-size:13px; letter-spacing:1.6px; text-transform:uppercase;">Secure smart home access and monitoring</p>
                 </td></tr>
-                <!-- Welcome -->
-                <tr><td style="background:#12122a; padding:35px 30px 25px;">
-                    <h2 style="color:#fff; margin:0 0 12px; font-size:22px;">Welcome, {client_name}! 👋</h2>
-                    <p style="color:#94a3b8; margin:0; font-size:15px; line-height:1.6;">
-                        Your Burghscape client portal is now live. From here you can monitor your smart home,
-                        submit support tickets, and manage your account — all in one place.
+
+                <tr><td style="background:#111327; border-left:1px solid rgba(139,92,246,0.25); border-right:1px solid rgba(139,92,246,0.25); padding:30px 28px 8px;">
+                    <h2 style="color:#ffffff; margin:0 0 12px; font-size:21px;">Hello {client_name},</h2>
+                    <p style="color:#cbd5e1; margin:0 0 18px; font-size:15px; line-height:1.65;">
+                        Your Burghscape Client Portal is ready. It gives you one place to access your Home Assistant remotely,
+                        follow system health, and request support from Burghscape.
                     </p>
                 </td></tr>
-                <!-- Login Box -->
-                <tr><td style="background:#12122a; padding:0 30px 25px;">
-                    <div style="background:rgba(139,92,246,0.08); border:1px solid rgba(139,92,246,0.2); border-radius:12px; padding:25px;">
-                        <h3 style="color:#c4b5fd; margin:0 0 15px; font-size:14px; text-transform:uppercase; letter-spacing:1px;">Your Login Details</h3>
+
+                <tr><td style="background:#111327; border-left:1px solid rgba(139,92,246,0.25); border-right:1px solid rgba(139,92,246,0.25); padding:10px 28px 22px;">
+                    <div style="background:rgba(255,255,255,0.045); border:1px solid rgba(255,255,255,0.10); border-radius:14px; padding:22px;">
+                        <h3 style="color:#ddd6fe; margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:1.4px;">Your portal details</h3>
                         <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr><td style="padding:8px 0; border-bottom:1px solid rgba(139,92,246,0.1);">
-                                <span style="color:#64748b; font-size:13px;">Portal URL</span><br>
-                                <a href="{client_portal_url}" style="color:#a78bfa; font-size:15px; text-decoration:none;">{client_portal_url}</a>
+                            <tr><td style="padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+                                <span style="color:#94a3b8; font-size:13px;">Client Portal</span><br>
+                                <a href="{portal_url}" style="color:#c4b5fd; font-size:15px; text-decoration:none;">{portal_url}</a>
                             </td></tr>
-                            <tr><td style="padding:8px 0; border-bottom:1px solid rgba(139,92,246,0.1);">
-                                <span style="color:#64748b; font-size:13px;">Email</span><br>
-                                <span style="color:#e2e8f0; font-size:15px;">{to_email}</span>
+                            <tr><td style="padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+                                <span style="color:#94a3b8; font-size:13px;">Login Email</span><br>
+                                <span style="color:#f8fafc; font-size:15px;">{to_email}</span>
                             </td></tr>
-                            <tr><td style="padding:8px 0;">
-                                <span style="color:#64748b; font-size:13px;">Temporary Password</span><br>
-                                <code style="background:rgba(139,92,246,0.15); color:#c4b5fd; padding:6px 12px; border-radius:6px; font-size:16px; letter-spacing:2px; display:inline-block; margin-top:4px;">{temp_password}</code>
-                            </td></tr>
+                            {password_row}
                         </table>
-                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:15px;">
-                            <tr><td>
-                                <a href="{client_portal_url}" style="display:block; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; text-align:center; padding:14px; border-radius:10px; text-decoration:none; font-weight:600; font-size:15px;">LOGIN TO YOUR PORTAL →</a>
-                            </td></tr>
+                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;">
+                            <tr>
+                                <td style="padding:0 0 10px;"><a href="{portal_url}" style="display:block; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#ffffff; text-align:center; padding:14px 16px; border-radius:11px; text-decoration:none; font-weight:700; font-size:14px;">Login to Your Portal</a></td>
+                            </tr>
+                            <tr>
+                                <td><a href="{getting_started_url}" style="display:block; background:rgba(139,92,246,0.12); border:1px solid rgba(167,139,250,0.34); color:#ddd6fe; text-align:center; padding:13px 16px; border-radius:11px; text-decoration:none; font-weight:600; font-size:14px;">Open Getting Started Guide</a></td>
+                            </tr>
                         </table>
                     </div>
                 </td></tr>
-                <!-- Security Notice -->
-                <tr><td style="background:#12122a; padding:0 30px 25px;">
-                    <div style="background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:18px 20px;">
-                        <p style="color:#fbbf24; margin:0; font-size:13px; line-height:1.6;">
-                            ⚠️ <strong>Security Notice:</strong> Please change your temporary password immediately after your first login.
-                            You will be prompted to set a new password automatically.
-                        </p>
+
+                <tr><td style="background:#111327; border-left:1px solid rgba(139,92,246,0.25); border-right:1px solid rgba(139,92,246,0.25); padding:0 28px 22px;">
+                    <h3 style="color:#ffffff; margin:0 0 12px; font-size:16px;">What happens next</h3>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr><td style="padding:8px 0; color:#cbd5e1; font-size:14px; line-height:1.55;"><strong style="color:#ffffff;">1. Sign in</strong><br><span style="color:#94a3b8;">Use the details above and change your temporary password when prompted.</span></td></tr>
+                        <tr><td style="padding:8px 0; color:#cbd5e1; font-size:14px; line-height:1.55;"><strong style="color:#ffffff;">2. Follow Getting Started</strong><br><span style="color:#94a3b8;">The guide walks you through the Burghscape Agent, Home Assistant token, and mobile app setup.</span></td></tr>
+                        <tr><td style="padding:8px 0; color:#cbd5e1; font-size:14px; line-height:1.55;"><strong style="color:#ffffff;">3. Use your Remote URL</strong><br><span style="color:#94a3b8;">{remote_url}</span></td></tr>
+                    </table>
+                </td></tr>
+
+                <tr><td style="background:#111327; border-left:1px solid rgba(139,92,246,0.25); border-right:1px solid rgba(139,92,246,0.25); padding:0 28px 24px;">
+                    <div style="background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.24); border-radius:12px; padding:16px 18px;">
+                        <p style="color:#fbbf24; margin:0; font-size:13px; line-height:1.6;"><strong>Security note:</strong> Burghscape will never ask you to email your Home Assistant password or full access tokens. Keep tokens private and share them only inside the approved setup fields.</p>
                     </div>
                 </td></tr>
-                <!-- How It Works -->
-                <tr><td style="background:#12122a; padding:0 30px 25px;">
-                    <h3 style="color:#fff; margin:0 0 15px; font-size:16px;">How It All Works</h3>
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                        <tr><td style="padding:10px 0; vertical-align:top; width:36px;">
-                            <span style="display:inline-block; width:28px; height:28px; background:rgba(139,92,246,0.2); border-radius:50%; text-align:center; line-height:28px; color:#a78bfa; font-size:13px; font-weight:600;">1</span>
-                        </td><td style="padding:10px 0; vertical-align:top;">
-                            <p style="color:#e2e8f0; margin:0; font-size:14px; line-height:1.5;"><strong>Log in to your portal</strong><br><span style="color:#64748b; font-size:13px;">Use the credentials above to access your client dashboard.</span></p>
-                        </td></tr>
-                        <tr><td style="padding:10px 0; vertical-align:top; width:36px;">
-                            <span style="display:inline-block; width:28px; height:28px; background:rgba(139,92,246,0.2); border-radius:50%; text-align:center; line-height:28px; color:#a78bfa; font-size:13px; font-weight:600;">2</span>
-                        </td><td style="padding:10px 0; vertical-align:top;">
-                            <p style="color:#e2e8f0; margin:0; font-size:14px; line-height:1.5;"><strong>Access Home Assistant</strong><br><span style="color:#64748b; font-size:13px;">Click "Open Home Assistant" to reach your HA instance through a secure Cloudflare tunnel.</span></p>
-                        </td></tr>
-                        <tr><td style="padding:10px 0; vertical-align:top; width:36px;">
-                            <span style="display:inline-block; width:28px; height:28px; background:rgba(139,92,246,0.2); border-radius:50%; text-align:center; line-height:28px; color:#a78bfa; font-size:13px; font-weight:600;">3</span>
-                        </td><td style="padding:10px 0; vertical-align:top;">
-                            <p style="color:#e2e8f0; margin:0; font-size:14px; line-height:1.5;"><strong>Monitor &amp; get support</strong><br><span style="color:#64748b; font-size:13px;">View system status, submit tickets, and track your monthly support hours.</span></p>
-                        </td></tr>
-                    </table>
-                </td></tr>
-                <!-- What You Can Do -->
-                <tr><td style="background:#12122a; padding:0 30px 25px;">
-                    <h3 style="color:#fff; margin:0 0 12px; font-size:16px;">What You Can Do</h3>
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">View your HA instance status (online/offline, version, entities)</span></td></tr>
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">Access Home Assistant securely via Cloudflare tunnel</span></td></tr>
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">Submit and track support tickets</span></td></tr>
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">Monitor monthly support hours used/remaining</span></td></tr>
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">View HA release notes and breaking change alerts</span></td></tr>
-                        <tr><td style="padding:6px 0;"><span style="color:#8b5cf6;">●</span> <span style="color:#cbd5e1; font-size:14px;">Manage additional portal users for your team</span></td></tr>
-                    </table>
-                </td></tr>
-                <!-- Footer -->
-                <tr><td style="background:#0a0a1a; border-radius:0 0 16px 16px; padding:25px 30px; text-align:center;">
-                    <p style="color:#64748b; margin:0; font-size:13px; line-height:1.6;">
-                        Need help? Submit a support ticket through your portal or reply to this email.<br>
-                        <span style="color:#475569;">Burghscape Pty Ltd · mybeacon.co.za</span>
-                    </p>
+
+                <tr><td style="background:#080917; border:1px solid rgba(139,92,246,0.25); border-top:none; border-radius:0 0 18px 18px; padding:24px 28px; text-align:center;">
+                    <p style="color:#94a3b8; margin:0; font-size:13px; line-height:1.6;">Need help? Reply to this email or open a support ticket from the Burghscape Client Portal.<br><span style="color:#64748b;">Powered by Burghscape Pty Ltd · MyBeacon platform</span></p>
                 </td></tr>
             </table>
         </td></tr>
@@ -183,46 +165,27 @@ def send_welcome_email(to_email: str, client_name: str, temp_password: str, clie
 """
 
     text = f"""
-Welcome to Burghscape, {client_name}!
+Welcome to Burghscape Home Cloud, {client_name}.
 
-Your client portal is now live.
+Your Burghscape Client Portal is ready.
 
-LOGIN DETAILS
-=============
-Portal URL: {client_portal_url}
-Email: {to_email}
-Temporary Password: {temp_password}
+Portal URL: {portal_url}
+Login Email: {to_email}
+{password_text}Getting Started Guide: {getting_started_url}
+Remote URL: {remote_url}
 
-LOGIN NOW: {client_portal_url}
+What happens next:
+1. Sign in to your portal and change your temporary password if prompted.
+2. Follow the Getting Started Guide to install and configure the Burghscape Agent.
+3. Use your Burghscape Remote URL after the secure connection is active.
 
-SECURITY NOTICE
-===============
-Please change your temporary password immediately after your first login.
-You will be prompted to set a new password automatically.
+Security note: Burghscape will never ask you to email your Home Assistant password or full access tokens.
 
-HOW IT WORKS
-============
-1. Log in to your portal using the credentials above
-2. Click "Open Home Assistant" to access your HA via secure Cloudflare tunnel
-3. Monitor system status, submit tickets, and track support hours
-
-WHAT YOU CAN DO
-===============
-- View your HA instance status (online/offline, version, entities)
-- Access Home Assistant securely via Cloudflare tunnel
-- Submit and track support tickets
-- Monitor monthly support hours used/remaining
-- View HA release notes and breaking change alerts
-- Manage additional portal users for your team
-
-NEED HELP?
-==========
-Submit a support ticket through your portal or reply to this email.
-Burghscape Pty Ltd - mybeacon.co.za
+Need help? Reply to this email or open a support ticket from the Burghscape Client Portal.
+Burghscape Pty Ltd - MyBeacon platform
 """
 
     return send_email(actual_to, subject, html, text)
-
 
 def send_password_reset_email(to_email: str, client_name: str, reset_token: str, portal_url: str):
     """Send password reset email."""

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Button, Card, EmptyState, ErrorState, LiveStatus, LoadingState, PageHeader, StatusBadge } from '../components/ui';
 
 export default function Backups() {
   const [backups, setBackups] = useState([]);
@@ -32,8 +33,8 @@ export default function Backups() {
     return () => clearInterval(id);
   }, [fetchBackups]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-400">Loading...</div></div>;
-  if (error) return <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-300">Error: {error}</div>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} />;
 
   const formatSize = (bytes) => {
     if (!bytes) return "Unknown";
@@ -48,45 +49,27 @@ export default function Backups() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Backups</h1>
-        <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs text-gray-500">Updated {lastUpdated.toLocaleTimeString()}</span>}
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-xs text-gray-500">Live</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader title="Server Backups" meta={<LiveStatus lastUpdated={lastUpdated} />} />
 
       <h2 className="text-white font-semibold mb-3">Managed Home Assistant Backups</h2>
       <div className="space-y-3 mb-8">
-        {managedState.map((item) => { const op = item.current_operation; return (
-          <div key={item.client_id} className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-            <div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">{op?.state || "No operation"}</span></div>
-            <div className="text-sm text-gray-500 mt-2">Automatic: {item.automatic_enabled ? "Enabled" : "Disabled"} · Last success: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div>
-          </div>
+        {managedState.map((item) => { const op=item.current_operation; return (
+          <Card key={item.client_id} compact><div className="flex flex-wrap justify-between gap-4"><div><div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><StatusBadge status={op?.state || "unknown"}>{op?.state || "No operation"}</StatusBadge></div><div className="text-sm text-gray-500 mt-2">Automatic: {item.automatic_enabled ? "Enabled" : "Disabled"} · Last success: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div></div></div></Card>
         ); })}
-        {managedState.length === 0 && <div className="text-gray-400">No managed backup state reported.</div>}
+        {managedState.length === 0 && <EmptyState>No managed backup state reported.</EmptyState>}
       </div>
 
       {backups.length === 0 ? (
-        <div className="text-gray-400">No backups recorded.</div>
+        <EmptyState>No server backups recorded.</EmptyState>
       ) : (
         <div className="space-y-4">
           {backups.map((b, i) => (
-            <div key={i} className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+            <Card key={i} compact>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3">
                     <span className="text-white font-semibold">{b.name || b.filename}</span>
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      b.status === "completed" || b.status === "available"
-                        ? "bg-green-900 text-green-300"
-                        : b.status === "failed"
-                        ? "bg-red-900 text-red-300"
-                        : "bg-blue-900 text-blue-300"
-                    }`}>{b.status || "available"}</span>
+                    <StatusBadge status={b.status || "available"}>{b.status || "available"}</StatusBadge>
                   </div>
                   <div className="text-sm text-gray-500 mt-1">
                     {b.type && <span className="mr-3">{b.type}</span>}
@@ -97,29 +80,28 @@ export default function Backups() {
                 </div>
                 <div className="flex gap-2">
                   {b.download_url && (
-                    <a href={b.download_url} download
-                       className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">
-                      ↓ Download
-                    </a>
+                    <Button as="a" href={b.download_url} download variant="primary">
+                      Download
+                    </Button>
                   )}
                   {b.client_name && (
                     <span className="text-xs text-gray-500 self-center">{b.client_name}</span>
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
-      <div className="mt-8 bg-gray-800/50 rounded-xl p-5 border border-gray-700">
-        <h2 className="text-white font-semibold mb-2">How Backups Work</h2>
+      <Card muted className="mt-8">
+        <h2 className="text-white font-semibold mb-2">Current Backup Scope</h2>
         <p className="text-gray-400 text-sm">
-          Server backups include: PostgreSQL database, environment configs, Docker setup,
-          platform source code, and Cloudflare tunnel configs. Client HA backups include
-          Home Assistant snapshots uploaded by the Burghscape Agent add-on.
+          Server backups include PostgreSQL database, environment configs, Docker setup,
+          platform source code, and Cloudflare tunnel configs. Managed Home Assistant backup state and completed uploads are shown above. Recurring scheduling, retention,
+          and restore are not active.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

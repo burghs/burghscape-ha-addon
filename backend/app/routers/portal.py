@@ -1,5 +1,6 @@
 """Client Portal — public-facing portal served at client.mybeacon.co.za"""
 from datetime import datetime
+from html import escape
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
@@ -7,9 +8,11 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
-from models import Client, SupportTicket, ClientUser, HomeAssistantInstance
+from models import Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
 
 router = APIRouter()
+
+ADDON_REPOSITORY_URL = "https://github.com/burghs/burghscape-ha-addon"
 
 # In-memory session store (use JWT or Redis in production)
 from routers.portal_state import portal_sessions
@@ -24,51 +27,71 @@ PORTAL_HTML = """<!DOCTYPE html>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {{ font-family: 'Inter', sans-serif; background: #0a0a1a; margin: 0; }}
+        * {{ box-sizing: border-box; }}
+        html {{ width: 100%; overflow-x: hidden; }}
+        body {{ font-family: 'Inter', sans-serif; background: #030712; margin: 0; overflow-x: hidden; min-width: 0; }}
         .bg-grid {{
-            background-image: linear-gradient(rgba(139,92,246,0.03) 1px, transparent 1px),
-                              linear-gradient(90deg, rgba(139,92,246,0.03) 1px, transparent 1px);
-            background-size: 60px 60px;
+            background-color: #030712;
+            background-image: radial-gradient(circle at top left, rgba(139,92,246,0.16), transparent 34%),
+                              linear-gradient(rgba(139,92,246,0.035) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(139,92,246,0.035) 1px, transparent 1px);
+            background-size: auto, 60px 60px, 60px 60px;
         }}
-        .card {{ background: rgba(18,18,42,0.8); border: 1px solid rgba(139,92,246,0.1); backdrop-filter: blur(10px); }}
-        .status-dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
+        .card {{ background: rgba(17,24,39,0.86); border: 1px solid rgba(255,255,255,0.10); backdrop-filter: blur(16px); box-shadow: 0 18px 45px rgba(0,0,0,0.24); }}
+        .status-dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }}
         .status-online {{ background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,0.5); }}
         .status-offline {{ background: #f87171; }}
-        .progress-bar {{ background: rgba(139,92,246,0.15); border-radius: 999px; overflow: hidden; }}
+        .progress-bar {{ background: rgba(255,255,255,0.10); border-radius: 999px; overflow: hidden; }}
         .progress-fill {{ background: linear-gradient(90deg, #8b5cf6, #6d28d9); height: 100%; border-radius: 999px; transition: width 1s; }}
         .nav-link {{ transition: all 0.2s; }}
-        .nav-link:hover {{ color: #8b5cf6; }}
-        .nav-active {{ color: #8b5cf6; border-color: #8b5cf6; }}
-        /* Light theme */
-        body.light {{ background: #f8fafc; color: #1e293b; }}
-        body.light .bg-grid {{ background-image: none; }}
-        body.light .card {{ background: #ffffff; border-color: #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        body.light .text-white {{ color: #1e293b !important; }}
-        body.light .text-gray-200 {{ color: #334155 !important; }}
-        body.light .text-gray-400 {{ color: #64748b !important; }}
-        body.light .text-gray-500 {{ color: #64748b !important; }}
-        body.light .bg-gray-900 {{ background: #f1f5f9 !important; }}
-        body.light .bg-gray-900\\/50 {{ background: #f1f5f9 !important; }}
-        body.light .border-gray-700 {{ border-color: #e2e8f0 !important; }}
-        body.light .border-gray-800 {{ border-color: #e2e8f0 !important; }}
+        .nav-link:hover {{ color: #a78bfa; }}
+        .brand-logo {{ height: 40px; width: 40px; object-fit: contain; display: block; flex-shrink: 0; }}
+        .portal-card {{ border-radius: 16px; }}
+        .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 14px; }}
+        .detail-item {{ border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.045); border-radius: 14px; padding: 14px; min-width: 0; }}
+        .detail-label {{ color: #6b7280; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }}
+        .detail-value {{ color: #ddd6fe; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; word-break: break-word; margin-top: 6px; min-width: 0; }}
+        .copy-chip {{ display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(167,139,250,0.26); background: rgba(139,92,246,0.12); color: #ddd6fe; border-radius: 10px; padding: 9px 11px; min-height: 40px; font-size: 12px; font-weight: 700; transition: background .2s ease; }}
+        .copy-chip:hover {{ background: rgba(139,92,246,0.22); }}
+        .copy-chip:disabled {{ opacity: .5; cursor: not-allowed; }}
+        .action-feedback {{ color: #34d399; font-size: 12px; min-height: 18px; }}
+        input, select, textarea {{ font-size: 16px; }}
+        .portal-actions {{ display:grid; grid-template-columns: 1fr; gap:10px; margin-top:14px; }}
+        .portal-action {{ border:1px solid rgba(167,139,250,0.22); border-radius:14px; background:rgba(255,255,255,0.045); padding:13px; color:#e5e7eb; transition:background .2s ease, border-color .2s ease; min-width:0; overflow:hidden; }}
+        .portal-action:hover {{ background:rgba(139,92,246,0.12); border-color:rgba(167,139,250,0.34); }}
+        .portal-action-text {{ overflow-wrap:anywhere; word-break:break-word; }}
+        .compact-action {{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; padding:10px 14px; min-height:42px; font-size:13px; font-weight:700; color:#fff; background:linear-gradient(135deg,#8b5cf6,#6d28d9); box-shadow:0 10px 24px rgba(139,92,246,.18); white-space:nowrap; }}
+        .compact-action:hover {{ filter:brightness(1.08); }}
+        .info-row {{ display:flex; align-items:center; justify-content:space-between; gap:16px; }}
+        @media (max-width: 640px) {{
+            nav > div {{ flex-direction: column; align-items: stretch; }}
+            nav .brand-logo {{ height:34px; width:34px; }}
+            nav .shrink-0 {{ flex-wrap: wrap; justify-content: flex-start; }}
+            #pw-form-nav {{ max-width: none; margin-left: 0; }}
+            .portal-card {{ padding: 16px !important; }}
+            .detail-item .mt-2 {{ flex-wrap: wrap; }}
+            .detail-value {{ flex-basis: 100%; font-size: 12px; }}
+            .copy-chip {{ flex: 1 1 auto; }}
+            .portal-actions {{ grid-template-columns: 1fr; }}
+        }}
     </style>
 </head>
 <body class="bg-gray-950 text-gray-200 min-h-screen bg-grid" id="app-body">
     <!-- Top Nav -->
-    <nav class="card border-b border-purple-500/10 px-4 md:px-6 py-4">
-        <div class="max-w-6xl mx-auto flex items-center justify-between">
-            <div class="flex items-center gap-2 md:gap-4">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="height:40px;width:auto"><defs><linearGradient id="navbg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#1a1a3e"/><stop offset="100%" style="stop-color:#0d0d24"/></linearGradient><linearGradient id="navacc" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#a78bfa"/><stop offset="100%" style="stop-color:#7c3aed"/></linearGradient></defs><circle cx="100" cy="100" r="95" fill="url(#navbg)" stroke="url(#navacc)" stroke-width="3"/><path d="M100 30 L150 50 L150 100 Q150 140 100 170 Q50 140 50 100 L50 50 Z" fill="none" stroke="#a78bfa" stroke-width="3"/><path d="M100 60 L130 80 L130 120 L70 120 L70 80 Z" fill="none" stroke="#c4b5fd" stroke-width="2.5"/><rect x="92" y="100" width="16" height="20" fill="#a78bfa" rx="2"/><circle cx="100" cy="45" r="5" fill="#a78bfa"/></svg>
-                <span class="hidden md:inline text-sm font-semibold text-purple-400">Burghscape</span>
-                <span class="text-sm md:text-lg font-semibold text-white">{client_name}</span>
+    <nav class="card border-b border-white/10 px-4 md:px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex min-w-0 items-center gap-3">
+                <img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="brand-logo">
+                <div class="min-w-0 leading-tight">
+                    <div class="text-sm font-semibold text-white">Burghscape</div>
+                    <div class="truncate text-xs uppercase tracking-[0.16em] text-purple-300">Client Portal</div>
+                </div>
+                <span class="hidden lg:inline text-sm font-medium text-gray-400 truncate">{client_name}</span>
                 <span class="text-xs px-2 py-1 rounded-full {status_class}">{status_text}</span>
             </div>
-            <div class="flex items-center gap-2 md:gap-4 text-sm">
-                <button onclick="toggleTheme()" class="p-2 rounded-lg hover:bg-gray-800/50 transition" title="Toggle theme">
-                    <svg id="theme-icon-sun" class="w-4 h-4 text-gray-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-                    <svg id="theme-icon-moon" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
-                </button>
+            <div class="flex shrink-0 items-center gap-2 md:gap-4 text-sm">
                 <span class="text-gray-400 hidden sm:inline">{user_name}</span>
+                <a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
                 <button onclick="document.getElementById('pw-form-nav').classList.toggle('hidden')" class="text-gray-400 hover:text-purple-400 transition nav-link text-xs md:text-sm">Account</button>
                 <a href="/portal/logout" class="text-gray-400 hover:text-purple-400 transition nav-link text-xs md:text-sm">Logout</a>
             </div>
@@ -84,76 +107,94 @@ PORTAL_HTML = """<!DOCTYPE html>
         </div>
     </nav>
 
-    <div class="max-w-6xl mx-auto p-6 mt-4">
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 mt-4">
+        {onboarding_banner_html}
         <!-- System Status -->
-        <div class="card rounded-2xl p-6 mb-6">
-            <div class="flex items-center justify-between mb-5">
-                <h2 class="text-lg font-semibold text-white">System Status</h2>
-                <div class="flex items-center gap-2">
-                    <span class="status-dot {online_dot_class}"></span>
-                    <span class="text-sm {online_text_class}">{online_status}</span>
+        <div class="card portal-card p-5 sm:p-6 mb-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-5">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold text-white">System Status</h2>
+                    <div class="flex items-center gap-2">
+                        <span class="status-dot {online_dot_class}"></span>
+                        <span class="text-sm {online_text_class}">{online_status}</span>
+                    </div>
                 </div>
+                <a href="/api/portal/report" target="_blank" class="compact-action">Download System Report</a>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                 <div>
-                    <p class="text-3xl font-bold text-white">{ha_version}</p>
-                    <p class="text-xs text-gray-500 mt-1">HA Version</p>
-                </div>
-                <div>
-                    <p class="text-3xl font-bold text-white">{entity_count}</p>
+                    <p class="text-2xl sm:text-3xl font-bold text-white">{entity_count}</p>
                     <p class="text-xs text-gray-500 mt-1">Entities</p>
                 </div>
                 <div>
-                    <p class="text-3xl font-bold text-white">{addon_count_display}</p>
+                    <p class="text-2xl sm:text-3xl font-bold text-white">{addon_count_display}</p>
                     <p class="text-xs text-gray-500 mt-1">Add-ons{addon_count_suffix}</p>
                 </div>
                 <div>
-                    <p class="text-3xl font-bold text-white">{integration_count}</p>
+                    <p class="text-2xl sm:text-3xl font-bold text-white">{integration_count}</p>
                     <p class="text-xs text-gray-500 mt-1">Integrations</p>
                 </div>
             </div>
         </div>
 
-        <!-- Quick Access + HA Info Row -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Quick Access -->
-            <div class="card rounded-2xl p-6">
-                <h2 class="text-lg font-semibold text-white mb-4">Quick Access</h2>
-                <a href="https://{subdomain}.mybeacon.co.za" target="_blank"
-                   class="inline-flex items-center gap-3 bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600 text-white px-5 py-3 rounded-xl transition shadow-lg shadow-purple-500/20">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                    Open Home Assistant
-                </a>
-                <p class="text-xs text-gray-500 mt-3">URL: https://{subdomain}.mybeacon.co.za</p>
+        <!-- Burghscape Details -->
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] gap-6 mb-6 items-start">
+            <div class="card portal-card p-5 sm:p-6 min-w-0">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">Your Burghscape Details</h2>
+                        <p class="text-sm text-gray-500 mt-1">The single source for your Burghscape setup values and access links.</p>
+                    </div>
+                    <span id="details-feedback" class="action-feedback"></span>
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-item"><div class="detail-label">Burghscape Add-on Repository URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{addon_repository_url}</span><button class="copy-chip" onclick="copyPortalValue('{addon_repository_url}', 'Repository URL copied', 'details-feedback')">Copy</button></div></div>
+                    <div class="detail-item"><div class="detail-label">Subscription Token</div><div class="mt-2 flex items-center gap-2"><span id="subscription-token-value" class="detail-value flex-1" data-masked="{subscription_token_masked}" data-secret="{subscription_token_secret}" data-visible="false">{subscription_token_masked}</span><button class="copy-chip" {subscription_token_disabled} onclick="toggleSecret('subscription-token-value', this, 'details-feedback')">Show</button><button class="copy-chip" {subscription_token_disabled} onclick="copySecretValue('subscription-token-value', 'Subscription token copied', 'details-feedback')">Copy</button></div></div>
+                    <div class="detail-item"><div class="detail-label">Home Assistant Remote URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{remote_url}</span><button class="copy-chip" onclick="copyPortalValue('{remote_url}', 'Remote URL copied', 'details-feedback')">Copy</button><a href="{remote_url}" target="_blank" rel="noopener" class="copy-chip">Open</a></div></div>
+                    <div class="detail-item"><div class="detail-label">Client Portal URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{client_portal_url}</span><button class="copy-chip" onclick="copyPortalValue('{client_portal_url}', 'Client Portal URL copied', 'details-feedback')">Copy</button></div></div>
+                    <div class="detail-item"><div class="detail-label">Instance Name</div><div class="detail-value">{instance_name}</div></div>
+                    <div class="detail-item"><div class="detail-label">Connection Status</div><div class="detail-value {online_text_class}">{online_status}</div></div>
+                </div>
             </div>
+            <div class="card portal-card p-5 sm:p-6 self-start min-w-0">
+                <h2 class="text-lg font-semibold text-white">Setup and Support</h2>
+                <p class="mt-1 text-sm text-gray-500">Continue onboarding or contact Burghscape for help.</p>
+                <div class="portal-actions">
+                    <a href="/portal/getting-started" class="portal-action"><span class="block text-sm font-semibold text-white">Getting Started</span><span class="portal-action-text mt-1 block text-xs text-gray-400">Open the guided setup.</span></a>
+                    <a href="mailto:support@mybeacon.co.za" class="portal-action"><span class="block text-sm font-semibold text-white">Contact Support</span><span class="portal-action-text mt-1 block text-xs text-gray-400">Email support@mybeacon.co.za</span></a>
+                </div>
+            </div>
+        </div>
 
-            <!-- HA Environment Info -->
-            <div class="card rounded-2xl p-6">
+        <!-- HA Environment Info -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 items-start">
+            <div class="card portal-card p-5 sm:p-6 min-w-0">
                 <h2 class="text-lg font-semibold text-white mb-4">Environment</h2>
                 <div class="space-y-3">
-                    <div class="flex justify-between text-sm">
+                    <div class="info-row text-sm">
                         <span class="text-gray-500">Database Size</span>
                         <span class="text-white font-medium">{db_size}</span>
                     </div>
-                    <div class="flex justify-between text-sm">
+                    <div class="info-row text-sm">
                         <span class="text-gray-500">Uptime</span>
                         <span class="text-white font-medium">{uptime}</span>
                     </div>
-                    <div class="flex justify-between text-sm">
+                    <div class="info-row text-sm">
                         <span class="text-gray-500">Updates Available</span>
                         <span class="font-medium {updates_class}">{updates_count}</span>
                     </div>
-                    <div class="flex justify-between text-sm">
+                    <div class="info-row text-sm">
                         <span class="text-gray-500">Last Seen</span>
                         <span class="text-white font-medium">{last_seen}</span>
                     </div>
                 </div>
             </div>
+            {ha_news_section}
         </div>
 
         <!-- Managed Backup Status -->
-        <div class="card rounded-2xl p-6 mb-6">
-          <div class="flex items-center justify-between mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backup</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
+        <div class="card portal-card p-5 sm:p-6 mb-6">
+          <div class="info-row mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backup</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Automatic backups</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last successful backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
         </div>
         <script>fetch("/api/portal/managed-backup-state",{credentials:"include"}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Disabled";document.getElementById("managed-backup-success").textContent=data.last_success?new Date(data.last_success.completed_at).toLocaleString()+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?new Date(data.last_failure.failed_at).toLocaleString()+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}).catch(()=>{document.getElementById("managed-backup-state").textContent="Unavailable"})</script>
@@ -161,7 +202,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         <!-- System Resources + Backup Status -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- System Stats -->
-            <div class="card rounded-2xl p-6">
+            <div class="card portal-card p-5 sm:p-6">
                 <h2 class="text-lg font-semibold text-white mb-4">System Resources</h2>
                 <div class="space-y-4">
                     <div>
@@ -195,18 +236,18 @@ PORTAL_HTML = """<!DOCTYPE html>
             </div>
 
             <!-- Backup Status -->
-            <div class="card rounded-2xl p-6">
+            <div class="card portal-card p-5 sm:p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white">Backup Status</h2>
+                    <h2 class="text-lg font-semibold text-white">Local HA Backup Status</h2>
                     <span class="text-xs px-3 py-1 rounded-full {backup_badge_class}">{backup_badge_text}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <p class="text-sm text-gray-500">Last Backup</p>
+                        <p class="text-sm text-gray-500">Last Local Backup</p>
                         <p class="text-white font-medium mt-1">{last_backup_str}</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500">Next Backup</p>
+                        <p class="text-sm text-gray-500">Next Local Backup</p>
                         <p class="text-white font-medium mt-1">{next_backup_str}</p>
                     </div>
                 </div>
@@ -214,10 +255,10 @@ PORTAL_HTML = """<!DOCTYPE html>
         </div>
 
 
-        <!-- Monthly Hours + Support Tickets + System Report + HA News (2x2 grid) -->
+        <!-- Monthly Hours + Support Tickets -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- Monthly Hours -->
-            <div class="card rounded-2xl p-6">
+            <div class="card portal-card p-5 sm:p-6">
                 <h2 class="text-lg font-semibold text-white mb-4">Monthly Hours</h2>
                 <div class="flex items-center gap-4 mb-2">
                     <div class="flex-1">
@@ -231,7 +272,7 @@ PORTAL_HTML = """<!DOCTYPE html>
             </div>
 
             <!-- Quick Support Ticket Summary -->
-            <div class="card rounded-2xl p-6">
+            <div class="card portal-card p-5 sm:p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-white">Support Tickets</h2>
                     <button onclick="document.getElementById('ticket-form').classList.toggle('hidden')"
@@ -251,45 +292,52 @@ PORTAL_HTML = """<!DOCTYPE html>
                 </div>
                 <div id="tickets-list" class="space-y-2 max-h-48 overflow-y-auto">{tickets_html}</div>
             </div>
-
-            <!-- System Report (compact card in grid) -->
-            <div class="card rounded-2xl p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-white">System Report</h2>
-                        <p class="text-sm text-gray-500 mt-1">Full PDF report of your HA system</p>
-                    </div>
-                    <a href="/api/portal/report" target="_blank"
-                       class="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600 text-white px-4 py-2 rounded-xl transition shadow-lg shadow-purple-500/20 text-sm font-medium">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        Download PDF
-                    </a>
-                </div>
-            </div>
-
-            <!-- HA Release Notes (compact card in grid) -->
-            {ha_news_section}
         </div>
 
 
     </div>
 
     <script>
-        // Theme toggle
-        function toggleTheme() {{
-            const body = document.getElementById('app-body');
-            const isLight = body.classList.toggle('light');
-            document.getElementById('theme-icon-sun').classList.toggle('hidden', !isLight);
-            document.getElementById('theme-icon-moon').classList.toggle('hidden', isLight);
-            localStorage.setItem('portal-theme', isLight ? 'light' : 'dark');
+        function setPortalFeedback(id, message, ok) {{
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = message;
+            el.classList.toggle('text-red-300', !ok);
+            el.classList.toggle('text-emerald-300', ok);
+            setTimeout(() => {{ el.textContent = ''; }}, 1800);
         }}
-        // Restore theme on load
-        if (localStorage.getItem('portal-theme') === 'light') {{
-            document.getElementById('app-body').classList.add('light');
-            document.getElementById('theme-icon-sun')?.classList.remove('hidden');
-            document.getElementById('theme-icon-moon')?.classList.add('hidden');
+        async function copyPortalValue(value, successMessage, feedbackId) {{
+            if (!value) {{
+                setPortalFeedback(feedbackId, 'Nothing to copy', false);
+                return;
+            }}
+            try {{
+                await navigator.clipboard.writeText(value);
+                setPortalFeedback(feedbackId, successMessage || 'Copied', true);
+            }} catch (err) {{
+                setPortalFeedback(feedbackId, 'Copy failed', false);
+            }}
         }}
-
+        function copySecretValue(elementId, successMessage, feedbackId) {{
+            const el = document.getElementById(elementId);
+            if (!el || !el.dataset.secret) {{
+                setPortalFeedback(feedbackId, 'Token unavailable', false);
+                return;
+            }}
+            copyPortalValue(el.dataset.secret, successMessage, feedbackId);
+        }}
+        function toggleSecret(elementId, button, feedbackId) {{
+            const el = document.getElementById(elementId);
+            if (!el || !el.dataset.secret) {{
+                setPortalFeedback(feedbackId, 'Token unavailable', false);
+                return;
+            }}
+            const visible = el.dataset.visible === 'true';
+            el.textContent = visible ? el.dataset.masked : el.dataset.secret;
+            el.dataset.visible = visible ? 'false' : 'true';
+            if (button) button.textContent = visible ? 'Show' : 'Hide';
+            setPortalFeedback(feedbackId, visible ? 'Token hidden' : 'Token shown', true);
+        }}
         async function submitTicket() {{
             const title = document.getElementById('ticket-title').value;
             const desc = document.getElementById('ticket-desc').value;
@@ -352,72 +400,59 @@ LOGIN_HTML = """<!DOCTYPE html>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {{ font-family: 'Inter', sans-serif; background: #0a0a1a; overflow: hidden; margin: 0; }}
-        .bg-grid {{
+        * { box-sizing: border-box; }
+        html { width:100%; overflow-x:hidden; }
+        body { font-family: 'Inter', sans-serif; background: #0a0a1a; overflow-x: hidden; overflow-y: auto; margin: 0; min-width:0; }
+        .bg-grid {
             background-image: linear-gradient(rgba(139,92,246,0.04) 1px, transparent 1px),
                               linear-gradient(90deg, rgba(139,92,246,0.04) 1px, transparent 1px);
             background-size: 60px 60px;
-        }}
-        .glow-orb {{ position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.35; animation: float 8s ease-in-out infinite; }}
-        @keyframes float {{ 0%,100% {{ transform: translateY(0) scale(1); }} 50% {{ transform: translateY(-30px) scale(1.05); }} }}
-        @keyframes pulse-glow {{
-            0%, 100% {{ box-shadow: 0 0 20px rgba(139,92,246,0.3), 0 0 40px rgba(139,92,246,0.1); border-color: rgba(139,92,246,0.25); }}
-            50% {{ box-shadow: 0 0 35px rgba(139,92,246,0.5), 0 0 70px rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.45); }}
-        }}
-        .logo-badge {{
+        }
+        .glow-orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.35; animation: float 8s ease-in-out infinite; pointer-events:none; }
+        @keyframes float { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-30px) scale(1.05); } }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.3), 0 0 40px rgba(139,92,246,0.1); border-color: rgba(139,92,246,0.25); }
+            50% { box-shadow: 0 0 35px rgba(139,92,246,0.5), 0 0 70px rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.45); }
+        }
+        .logo-badge {
             animation: logo-pulse 3s ease-in-out infinite;
-        }}
-        @keyframes pulse-glow {{ 0%,100% {{ box-shadow: 0 0 20px rgba(139,92,246,0.2); }} 50% {{ box-shadow: 0 0 50px rgba(139,92,246,0.35), 0 0 100px rgba(139,92,246,0.1); }} }}
-        @keyframes logo-pulse {{
-            0%, 100% {{ box-shadow: 0 0 20px rgba(139,92,246,0.5), 0 0 40px rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.4); }}
-            50% {{ box-shadow: 0 0 40px rgba(139,92,246,0.8), 0 0 100px rgba(139,92,246,0.35); border-color: rgba(190,160,255,0.7); }}
-        }}
-        .card-glow {{ animation: pulse-glow 4s ease-in-out infinite; }}
-        .input-field {{ background: rgba(255,255,255,0.04); border: 1px solid rgba(139,92,246,0.2); transition: all 0.3s; color: #e2e8f0; }}
-        .input-field:focus {{ border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.25); outline: none; }}
-        .btn-primary {{ background: linear-gradient(135deg, #8b5cf6, #6d28d9); transition: all 0.3s; box-shadow: 0 4px 20px rgba(139,92,246,0.3); }}
-        .btn-primary:hover {{ transform: translateY(-1px); box-shadow: 0 8px 35px rgba(139,92,246,0.5); }}
-        .logo-float {{ animation: float 6s ease-in-out infinite; }}
+        }
+        @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px rgba(139,92,246,0.2); } 50% { box-shadow: 0 0 50px rgba(139,92,246,0.35), 0 0 100px rgba(139,92,246,0.1); } }
+        @keyframes logo-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.5), 0 0 40px rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.4); }
+            50% { box-shadow: 0 0 40px rgba(139,92,246,0.8), 0 0 100px rgba(139,92,246,0.35); border-color: rgba(190,160,255,0.7); }
+        }
+        .card-glow { animation: pulse-glow 4s ease-in-out infinite; }
+        .input-field { background: rgba(255,255,255,0.04); border: 1px solid rgba(139,92,246,0.2); transition: all 0.3s; color: #e2e8f0; font-size:16px; }
+        .input-field:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.25); outline: none; }
+        .btn-primary { background: linear-gradient(135deg, #8b5cf6, #6d28d9); transition: all 0.3s; box-shadow: 0 4px 20px rgba(139,92,246,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 35px rgba(139,92,246,0.5); }
+        .logo-float { animation: float 6s ease-in-out infinite; }
+        @media (max-width: 768px) {
+            body { min-height: 100dvh; padding-left:max(1rem, env(safe-area-inset-left)); padding-right:max(1rem, env(safe-area-inset-right)); }
+            .glow-orb { display:none; }
+            .login-shell { max-width: none; width: min(94vw, 28rem); }
+            .login-logo { height: 72px !important; max-width: 112px !important; }
+            .login-brand { margin-bottom: 1rem !important; animation: none; }
+            .login-card { width:100%; padding: 1.25rem !important; border-radius: 1.25rem !important; }
+            .input-field { font-size:16px !important; min-height:48px; }
+            .btn-primary { width:100%; min-height:48px; }
+        }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4 bg-grid relative" style="background:#0a0a1a">
+<body class="min-h-screen flex items-center justify-center p-4 bg-grid relative" style="background:#0a0a1a; padding-top:max(1rem, env(safe-area-inset-top)); padding-bottom:max(1rem, env(safe-area-inset-bottom));">
     <div class="glow-orb w-96 h-96 bg-purple-600" style="top:-10%;left:-5%"></div>
     <div class="glow-orb w-80 h-80 bg-violet-700" style="bottom:-10%;right:-5%;animation-delay:-4s"></div>
     <div class="glow-orb w-64 h-64 bg-indigo-600" style="top:50%;left:60%;opacity:0.15;animation-delay:-2s"></div>
 
-    <div class="relative z-10 w-full max-w-md">
-        <div class="text-center mb-8 logo-float">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="height:168px;width:auto;display:block;margin:0 auto 12px">
-                <defs>
-                    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#1a1a3e"/>
-                        <stop offset="100%" style="stop-color:#0d0d24"/>
-                    </linearGradient>
-                    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#a78bfa"/>
-                        <stop offset="100%" style="stop-color:#7c3aed"/>
-                    </linearGradient>
-                    <filter id="glow">
-                        <feGaussianBlur stdDeviation="2" result="blur"/>
-                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                </defs>
-                <circle cx="100" cy="100" r="95" fill="url(#bg)" stroke="url(#accent)" stroke-width="2" opacity="0.9"/>
-                <path d="M100 30 L150 50 L150 100 Q150 140 100 170 Q50 140 50 100 L50 50 Z" fill="none" stroke="#a78bfa" stroke-width="2.5" filter="url(#glow)"/>
-                <path d="M100 60 L130 80 L130 120 L70 120 L70 80 Z" fill="none" stroke="#c4b5fd" stroke-width="2"/>
-                <line x1="100" y1="60" x2="100" y1="80" stroke="#c4b5fd" stroke-width="2"/>
-                <rect x="92" y="100" width="16" height="20" fill="#a78bfa" rx="2"/>
-                <circle cx="100" cy="45" r="4" fill="#a78bfa"/>
-                <circle cx="75" cy="100" r="3" fill="#7c3aed"/>
-                <circle cx="125" cy="100" r="3" fill="#7c3aed"/>
-                <path d="M60 70 Q55 80 60 90" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.6"/>
-                <path d="M140 70 Q145 80 140 90" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.6"/>
-            </svg>
+    <div class="login-shell relative z-10 w-full max-w-md">
+        <div class="login-brand text-center mb-8 logo-float">
+            <img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="login-logo" style="height:112px;width:auto;max-width:168px;object-fit:contain;display:block;margin:0 auto 12px">
             <h1 class="text-2xl font-bold text-white mt-3" style="letter-spacing:-0.5px">Burghscape</h1>
             <p class="text-xs text-purple-400 mt-1" style="letter-spacing:2px;text-transform:uppercase">Pty Ltd</p>
         </div>
 
-        <div class="bg-[#12122a]/85 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/10 card-glow">
+        <div class="login-card bg-[#12122a]/85 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/10 card-glow">
             <div id="login-section">
                 <h1 class="text-xl font-bold text-white mb-1 text-center">Client Portal</h1>
                 <p class="text-sm text-gray-500 mb-6 text-center">Sign in to your dashboard</p>
@@ -525,6 +560,330 @@ LOGIN_HTML = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+GETTING_STARTED_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Setup - Burghscape Home Cloud</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing:border-box; }
+        html { width:100%; overflow-x:hidden; }
+        body { font-family: 'Inter', sans-serif; background:#030712; margin:0; overflow-x:hidden; min-width:0; }
+        .bg-grid { background-color:#030712; background-image:radial-gradient(circle at 14% 0%, rgba(139,92,246,0.22), transparent 32%), radial-gradient(circle at 90% 12%, rgba(59,130,246,0.12), transparent 26%), linear-gradient(rgba(139,92,246,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.035) 1px, transparent 1px); background-size:auto,auto,60px 60px,60px 60px; }
+        .card { background:rgba(17,24,39,0.86); border:1px solid rgba(255,255,255,0.10); backdrop-filter:blur(16px); box-shadow:0 18px 45px rgba(0,0,0,0.24); }
+        .brand-logo { height:40px; width:40px; object-fit:contain; display:block; flex-shrink:0; }
+        .hero { position:relative; overflow:hidden; border-radius:28px; border:1px solid rgba(167,139,250,0.24); background:linear-gradient(135deg, rgba(17,24,39,0.92), rgba(49,46,129,0.48)); box-shadow:0 24px 70px rgba(0,0,0,0.35); }
+        .hero:before { content:""; position:absolute; inset:-35% -20% auto auto; width:520px; height:520px; border-radius:999px; background:radial-gradient(circle, rgba(139,92,246,0.26), transparent 62%); pointer-events:none; }
+        .pill { display:inline-flex; align-items:center; gap:7px; border-radius:999px; border:1px solid rgba(167,139,250,0.28); background:rgba(139,92,246,0.12); padding:7px 11px; color:#ddd6fe; font-size:12px; line-height:1; }
+        .status-dot { width:9px; height:9px; border-radius:999px; display:inline-block; }
+        .status-online { background:#34d399; box-shadow:0 0 12px rgba(52,211,153,0.56); }
+        .status-pending { background:#fbbf24; box-shadow:0 0 12px rgba(251,191,36,0.42); }
+        .btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:14px; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; font-weight:700; padding:13px 18px; box-shadow:0 16px 38px rgba(109,40,217,0.26); transition:transform .2s ease, box-shadow .2s ease; }
+        .btn-primary:hover { transform:translateY(-1px); box-shadow:0 20px 48px rgba(109,40,217,0.34); }
+        .btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:14px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:#e5e7eb; font-weight:650; padding:12px 16px; transition:background .2s ease, border-color .2s ease; }
+        .btn-secondary:hover { background:rgba(255,255,255,0.10); border-color:rgba(167,139,250,0.34); }
+        .btn-secondary:disabled { opacity:.45; cursor:not-allowed; }
+        .copy-button { border-radius:10px; border:1px solid rgba(167,139,250,0.24); background:rgba(139,92,246,0.12); color:#ddd6fe; padding:8px 10px; font-size:12px; font-weight:700; transition:background .2s ease; }
+        .copy-button:hover { background:rgba(139,92,246,0.22); }
+        .copy-button:disabled { opacity:.45; cursor:not-allowed; }
+        .copy-feedback { color:#34d399; font-size:12px; min-height:18px; }
+        .stage-shell { display:grid; grid-template-columns:minmax(0, 285px) minmax(0, 1fr); gap:24px; }
+        .stage-list { position:sticky; top:20px; align-self:start; }
+        .stage-tab { width:100%; display:flex; align-items:center; gap:10px; text-align:left; border-radius:14px; border:1px solid transparent; color:#9ca3af; padding:10px 12px; transition:background .2s ease, color .2s ease, border-color .2s ease; }
+        .stage-tab:hover { color:#fff; background:rgba(255,255,255,0.05); }
+        .stage-tab.active { color:#fff; border-color:rgba(167,139,250,0.34); background:linear-gradient(135deg, rgba(139,92,246,0.22), rgba(109,40,217,0.10)); }
+        .stage-tab.hidden { display:none; }
+        .path-choice { text-align:left; border-radius:18px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.045); padding:16px; transition:background .2s ease, border-color .2s ease, transform .2s ease; }
+        .path-choice:hover { transform:translateY(-1px); background:rgba(255,255,255,0.07); border-color:rgba(167,139,250,0.28); }
+        .path-choice.active { border-color:rgba(167,139,250,0.46); background:linear-gradient(135deg, rgba(139,92,246,0.20), rgba(14,165,233,0.08)); }
+        .stage-number { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:rgba(255,255,255,0.07); color:#d1d5db; font-size:12px; font-weight:800; }
+        .stage-tab.active .stage-number { background:#8b5cf6; color:white; }
+        .stage-panel { display:none; border-radius:24px; background:rgba(17,24,39,0.86); border:1px solid rgba(255,255,255,0.10); box-shadow:0 18px 45px rgba(0,0,0,0.22); }
+        .stage-panel.active { display:block; animation:fadeIn .22s ease; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+        .progress-track { height:10px; border-radius:999px; background:rgba(255,255,255,0.10); overflow:hidden; }
+        .progress-fill { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#8b5cf6,#22d3ee); transition:width .25s ease; }
+        .media-card { min-width:0; width:100%; min-height:260px; border-radius:20px; border:1px dashed rgba(167,139,250,0.32); background:linear-gradient(135deg, rgba(139,92,246,0.10), rgba(15,23,42,0.72)); display:flex; align-items:center; justify-content:center; text-align:center; padding:26px; overflow:hidden; }
+        .media-card img { max-width:100%; border-radius:16px; border:1px solid rgba(255,255,255,0.10); box-shadow:0 18px 48px rgba(0,0,0,0.34); }
+        .callout { border-radius:16px; padding:15px 16px; font-size:14px; line-height:1.6; }
+        .callout strong { display:block; margin-bottom:3px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; }
+        .tip { background:rgba(139,92,246,0.10); border:1px solid rgba(167,139,250,0.24); color:#ddd6fe; }
+        .note { background:rgba(14,165,233,0.10); border:1px solid rgba(56,189,248,0.22); color:#bae6fd; }
+        .important { background:rgba(251,191,36,0.09); border:1px solid rgba(251,191,36,0.25); color:#fde68a; }
+        .warning { background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.25); color:#fecaca; }
+        .data-field { border-radius:16px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.05); padding:14px; }
+        .field-value { overflow-wrap:anywhere; word-break:break-word; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#ddd6fe; font-size:13px; min-width:0; }
+        .mobile-card { border-radius:20px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.045); padding:20px; }
+        .completion-card { border-radius:18px; border:1px solid rgba(52,211,153,0.22); background:rgba(16,185,129,0.09); padding:16px; }
+        .remote-url { word-break:break-all; color:#c4b5fd; }
+        @media (max-width: 900px) { .stage-shell { grid-template-columns:1fr; } .stage-list { position:static; } .stage-nav { display:flex; overflow-x:auto; gap:8px; padding-bottom:6px; -webkit-overflow-scrolling:touch; } .stage-tab { min-width:170px; flex:0 0 auto; } }
+        @media (max-width: 640px) { body { min-height:100dvh; } main { padding-left:max(1rem, env(safe-area-inset-left)); padding-right:max(1rem, env(safe-area-inset-right)); } .hero { border-radius:22px; } .hero h1 { font-size:2.25rem; } .stage-panel { border-radius:18px; } .stage-tab { min-width:145px; padding:9px; } .stage-number { width:24px; height:24px; } .media-card { min-height:210px; padding:18px; } .data-field .mt-2, .stage-panel .mt-5.flex { flex-wrap:wrap; } .copy-button, .btn-primary, .btn-secondary { min-height:44px; } .field-value { flex-basis:100%; font-size:12px; } }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 min-h-screen bg-grid">
+    <nav class="card border-b border-white/10 px-4 md:px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex min-w-0 items-center gap-3">
+                <img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="brand-logo">
+                <div class="min-w-0 leading-tight">
+                    <div class="text-sm font-semibold text-white">Burghscape</div>
+                    <div class="truncate text-xs uppercase tracking-[0.16em] text-purple-300">Home Cloud</div>
+                </div>
+                <span class="hidden lg:inline text-sm font-medium text-gray-400 truncate">__CLIENT_NAME__</span>
+            </div>
+            <div class="flex shrink-0 items-center gap-2 md:gap-4 text-sm">
+                <a href="/portal" class="text-gray-400 hover:text-purple-400 transition text-xs md:text-sm">Dashboard</a>
+                <a href="/portal/logout" class="text-gray-400 hover:text-purple-400 transition text-xs md:text-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <section class="hero p-6 sm:p-8 lg:p-10 mb-6">
+            <div class="relative grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-center">
+                <div>
+                    <span class="pill mb-5"><span class="status-dot __STATUS_DOT_CLASS__"></span>__INSTANCE_STATUS__</span>
+                    <h1 class="text-4xl sm:text-5xl font-bold text-white tracking-tight">Burghscape Home Cloud</h1>
+                    <p class="mt-4 text-xl sm:text-2xl text-gray-200 leading-snug">Let’s connect your Home Assistant system.</p>
+                    <p class="mt-4 max-w-2xl text-gray-400 leading-relaxed">Complete these guided steps to activate secure remote access, monitoring, and mobile connectivity through your Burghscape Client Portal.</p>
+                    <div class="mt-6 flex flex-wrap gap-3">
+                        <a href="#setup" data-start-action class="btn-primary">__START_ACTION_LABEL__</a>
+                        <a href="__REMOTE_URL__" target="_blank" rel="noopener" class="btn-secondary">Open Remote URL</a>
+                    </div>
+                </div>
+                <div class="grid gap-3">
+                    <div class="data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Estimated setup time</div><div class="mt-1 text-lg font-semibold text-white">25-35 minutes</div></div>
+                    <div class="data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Connection status</div><div class="mt-1 font-semibold __STATUS_CLASS__">__INSTANCE_STATUS__</div></div>
+                    <div class="data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Customer Remote URL</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__REMOTE_URL__</span><button class="copy-button" data-copy="__REMOTE_URL__">Copy</button></div></div>
+                </div>
+            </div>
+        </section>
+
+        <div id="copy-feedback" class="copy-feedback mb-3"></div>
+        <section class="card rounded-3xl p-5 sm:p-6 mb-6" aria-label="Choose setup path">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+                <div>
+                    <span class="pill mb-3">Setup path</span>
+                    <h2 class="text-2xl font-bold text-white">Choose the path that matches your installation</h2>
+                    <p class="mt-2 text-sm text-gray-400 max-w-3xl">New customers can follow every installation step. Existing maintenance or migrated customers whose system was already connected by Burghscape can skip the installation-only stages and continue with Remote URL and mobile setup.</p>
+                </div>
+                <button type="button" class="btn-secondary" data-path-reset>Change path anytime</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button type="button" class="path-choice" data-path-choice="self"><span class="block text-lg font-semibold text-white">I am installing the Burghscape Agent</span><span class="mt-1 block text-sm text-gray-400">Use this if you are setting up Home Assistant, tokens, the repository, and the agent yourself.</span></button>
+                <button type="button" class="path-choice" data-path-choice="connected"><span class="block text-lg font-semibold text-white">Burghscape already connected my system</span><span class="mt-1 block text-sm text-gray-400">Use this if Burghscape installed or migrated the agent for you. Continue with Remote URL and mobile app setup.</span></button>
+            </div>
+            <p id="path-feedback" class="copy-feedback mt-3"></p>
+        </section>
+        <section id="setup" class="stage-shell">
+            <aside class="stage-list card rounded-3xl p-4">
+                <div class="mb-4">
+                    <div class="flex items-center justify-between gap-3 mb-2"><span class="text-sm font-semibold text-white">Setup progress</span><span id="progress-label" class="text-xs text-purple-300">0%</span></div>
+                    <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+                </div>
+                <div class="stage-nav" id="stage-nav">
+                    <button class="stage-tab active" data-stage-target="0"><span class="stage-number">1</span><span>Welcome</span></button>
+                    <button class="stage-tab" data-stage-target="1" data-path="self"><span class="stage-number">2</span><span>Create HA Token</span></button>
+                    <button class="stage-tab" data-stage-target="2" data-path="self"><span class="stage-number">3</span><span>Subscription Token</span></button>
+                    <button class="stage-tab" data-stage-target="3" data-path="self"><span class="stage-number">4</span><span>Install Agent</span></button>
+                    <button class="stage-tab" data-stage-target="4" data-path="self"><span class="stage-number">5</span><span>Configure Agent</span></button>
+                    <button class="stage-tab" data-stage-target="5" data-path="self"><span class="stage-number">6</span><span>Start Agent</span></button>
+                    <button class="stage-tab" data-stage-target="6"><span class="stage-number">7</span><span>Remote Access</span></button>
+                    <button class="stage-tab" data-stage-target="7"><span class="stage-number">8</span><span>Android</span></button>
+                    <button class="stage-tab" data-stage-target="8"><span class="stage-number">9</span><span>iPhone / iPad</span></button>
+                    <button class="stage-tab" data-stage-target="9"><span class="stage-number">10</span><span>Finish</span></button>
+                </div>
+            </aside>
+
+            <div class="min-w-0">
+                <article class="stage-panel active p-5 sm:p-7" data-stage="0">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
+                        <div>
+                            <span class="pill mb-4">Welcome</span>
+                            <h2 class="text-3xl font-bold text-white">Start with your Burghscape Client Portal</h2>
+                            <p class="mt-3 text-gray-300 leading-relaxed">Your portal is the home base for setup, remote access, monitoring, and support.</p>
+                            <ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li>Keep this page open during setup.</li><li>Confirm your Burghscape Client Portal URL below.</li><li>Move through each stage and mark progress as you go.</li></ol>
+                            <div class="mt-5 data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Client Portal URL</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__CLIENT_PORTAL_URL__</span><button class="copy-button" data-copy="__CLIENT_PORTAL_URL__">Copy</button></div></div>
+                            <div class="callout tip mt-5"><strong>Burghscape Tip</strong>No router configuration is required. Burghscape performs the secure tunnel setup automatically after the Burghscape Agent connects.</div>
+                        </div>
+                        <div class="media-card" data-image="step1-client-portal-login.png"><div><div class="text-lg font-semibold text-white">Client Portal Login</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step1-client-portal-login.png</code>. Show the Burghscape logo, email/password fields, and Sign In button.</p></div></div>
+                    </div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="1" data-path="self">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
+                        <div><span class="pill mb-4">New / self-install customers only</span><h2 class="text-3xl font-bold text-white">Create a Home Assistant Long-Lived Access Token</h2><p class="mt-3 text-gray-300 leading-relaxed">The Burghscape Agent uses this Home Assistant token to read system health from your own Home Assistant installation. It is different from your Burghscape Subscription Token.</p><ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li>Open the Home Assistant user profile.</li><li>Open Security.</li><li>Find Long-lived access tokens.</li><li>Select Create token.</li><li>Name it Burghscape Agent.</li><li>Copy it immediately and keep it private.</li></ol><div class="callout important mt-5"><strong>Important</strong>Home Assistant displays a Long-Lived Access Token only once. Enter this token in the Burghscape Agent <code>ha_token</code> field. Existing migrated or maintenance clients should not create another token unless Burghscape specifically requests it.</div></div>
+                        <div class="media-card" data-image="step2-generate-token.png"><div><div class="text-lg font-semibold text-white">Generate Home Assistant Token</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step2-generate-token.png</code>. Show Profile → Security → Long-Lived Access Tokens and highlight Create Token.</p></div></div>
+                    </div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="2" data-path="self">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6"><div><span class="pill mb-4">New / self-install customers only</span><h2 class="text-3xl font-bold text-white">Copy your Burghscape Subscription Token</h2><p class="mt-3 text-gray-300 leading-relaxed">This token links your Burghscape Agent to your Burghscape customer account. It is different from your Home Assistant Long-Lived Access Token.</p><div class="mt-5 data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Subscription Token</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">Available under Your Burghscape Details</span><a href="/portal" class="copy-button">Open Dashboard</a></div><p class="mt-2 text-xs text-gray-500">__SUBSCRIPTION_TOKEN_NOTE__</p></div><div class="callout warning mt-5"><strong>Warning</strong>Do not email full tokens or paste them into support tickets. Use only the approved Burghscape Agent configuration field named <code>subscription_token</code>.</div></div><div class="media-card" data-image="step3-subscription-token.png"><div><div class="text-lg font-semibold text-white">Subscription Token Location</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step3-subscription-token.png</code>. Show Your Burghscape Details, the masked Subscription Token, and the Show/Copy controls without exposing the full token.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="3" data-path="self">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6"><div><span class="pill mb-4">New / self-install customers only</span><h2 class="text-3xl font-bold text-white">Install the Burghscape Agent app</h2><p class="mt-3 text-gray-300 leading-relaxed">The Burghscape Agent runs inside Home Assistant and handles monitoring, secure remote access, and automatic onboarding.</p><ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li>Open Home Assistant.</li><li>Go to Settings.</li><li>Open Apps.</li><li>Select Install app.</li><li>Open the three-dot menu in the top-right.</li><li>Select Repositories.</li><li>Select + Add.</li><li>Paste the Burghscape App Repository URL shown under Your Burghscape Details.</li><li>Confirm Add.</li><li>Find and install Burghscape Agent.</li></ol><div class="mt-5 data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Burghscape App Repository URL</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__ADDON_REPOSITORY_URL__</span><button class="copy-button" data-copy="__ADDON_REPOSITORY_URL__">Copy</button></div></div><div class="callout note mt-5"><strong>Note</strong>If Burghscape already connected your system, do not reinstall the Agent unless support asks you to.</div></div><div class="media-card" data-image="step4-install-agent.png"><div><div class="text-lg font-semibold text-white">Install Burghscape Agent</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step4-install-agent.png</code>. Show Settings → Apps → Install app, the three-dot menu, Repositories, + Add, and the Burghscape Agent listing.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="4" data-path="self">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6"><div><span class="pill mb-4">New / self-install customers only</span><h2 class="text-3xl font-bold text-white">Enter the Burghscape Agent configuration</h2><p class="mt-3 text-gray-300 leading-relaxed">Enter these options in the order shown, then save before starting the Agent.</p><ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li><code>platform_url</code>: <code>https://api.mybeacon.co.za</code></li><li><code>subscription_token</code>: copy from Your Burghscape Details in the Client Portal.</li><li><code>instance_name</code>: enter a recognizable site name.</li><li><code>heartbeat_interval</code>: <code>60</code>.</li><li>Enable <code>monitor_entities</code>, <code>monitor_disk</code>, <code>monitor_automations</code>, <code>monitor_updates</code>, and <code>monitor_backups</code>.</li><li>Leave <code>monitor_frigate</code> disabled. Frigate monitoring is an upcoming feature and should remain disabled until released.</li><li><code>report_days</code>: <code>30</code>.</li><li><code>ha_token</code>: paste the Home Assistant Long-Lived Access Token created earlier.</li><li>Select Save before starting the Agent.</li></ol><div class="callout warning mt-5"><strong>Troubleshooting</strong>If Save reports an error and <code>heartbeat_interval</code> changed to <code>59</code>, manually change it back to <code>60</code> and save again.</div></div><div class="media-card" data-image="step5-agent-config.png"><div><div class="text-lg font-semibold text-white">Configure Burghscape Agent</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step5-agent-config.png</code>. Highlight platform_url, subscription_token, instance_name, heartbeat_interval, monitoring toggles, report_days, ha_token, and the Save button.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="5" data-path="self">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6"><div><span class="pill mb-4">Start Agent</span><h2 class="text-3xl font-bold text-white">Start the Burghscape Agent</h2><p class="mt-3 text-gray-300 leading-relaxed">Once started, the agent contacts Burghscape, receives your Remote URL, configures Home Assistant, and verifies the secure public connection.</p><ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li>Enable Start on boot.</li><li>Start the add-on.</li><li>Open Logs and wait for successful connection messages.</li><li>Return to this portal after a few minutes.</li></ol><div class="callout tip mt-5"><strong>Burghscape Tip</strong>During first-time setup, it may take a few minutes before your Home Assistant appears online in the Burghscape Client Portal. This is normal while the secure connection is being established.</div></div><div class="media-card" data-image="step6-start-agent.png"><div><div class="text-lg font-semibold text-white">Start Agent</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step6-start-agent.png</code>. Show Start on boot, Start button, and the add-on log panel.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="6">
+                    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6"><div><span class="pill mb-4">Remote Access</span><h2 class="text-3xl font-bold text-white">Confirm your Remote URL works</h2><p class="mt-3 text-gray-300 leading-relaxed">Your Remote URL opens Home Assistant through Burghscape’s secure managed tunnel. It is different from the Burghscape Client Portal login page.</p><ol class="mt-5 space-y-3 text-gray-300 list-decimal list-inside"><li>Copy your customer-specific Remote URL.</li><li>Open it in a browser.</li><li>Sign in with your Home Assistant username and password.</li><li>Use your Burghscape Client Portal username and password only at <code>__CLIENT_PORTAL_URL__</code>.</li><li>Return here when Home Assistant loads successfully.</li></ol><div class="mt-5 grid gap-3"><div class="data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Client Portal login</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__CLIENT_PORTAL_URL__</span><button class="copy-button" data-copy="__CLIENT_PORTAL_URL__">Copy</button></div></div><div class="data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Remote URL for Home Assistant</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__REMOTE_URL__</span><button class="copy-button" data-copy="__REMOTE_URL__">Copy</button><a href="__REMOTE_URL__" target="_blank" rel="noopener" class="btn-secondary">Open</a></div></div></div><div class="callout note mt-5"><strong>Note</strong>If the portal still shows Offline, wait a few minutes and refresh. The agent reports status automatically.</div></div><div class="media-card" data-image="step7-remote-url-working.png"><div><div class="text-lg font-semibold text-white">Remote URL Active</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step7-remote-url-working.png</code>. Show Home Assistant loaded from the customer Remote URL, not the Burghscape Client Portal URL.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="7">
+                    <span class="pill mb-4">Android</span><h2 class="text-3xl font-bold text-white">Set up Android mobile access</h2><p class="mt-3 text-gray-300 leading-relaxed">Use the official Home Assistant Companion App and connect with your Burghscape Remote URL.</p><div class="mt-5 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6"><div class="mobile-card"><h3 class="text-xl font-semibold text-white">Android Companion App</h3><p class="mt-1 text-sm text-purple-300">Google Play Store</p><ol class="mt-4 space-y-3 text-gray-300 list-decimal list-inside"><li>Install the official Home Assistant Companion App.</li><li>Open it.</li><li>Select Connect to my Home Assistant server.</li><li>Select Enter address manually when needed.</li><li>Enter your customer-specific Burghscape Remote URL.</li><li>Sign in with your Home Assistant credentials.</li><li>Choose a device name.</li><li>Enable notifications if wanted.</li><li>For reliable background presence, set Location to Allow all the time and allow Nearby devices when prompted.</li></ol><div class="mt-5 data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Server address</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__REMOTE_URL__</span><button class="copy-button" data-copy="__REMOTE_URL__">Copy</button></div></div></div><div class="media-card" data-image="step8-android-companion-app.png"><div><div class="text-lg font-semibold text-white">Android App Setup</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step8-android-companion-app.png</code>. Show Connect to my Home Assistant server, Enter address manually, the Remote URL field, device name, notifications, Location, and Nearby devices prompts.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="8">
+                    <span class="pill mb-4">iPhone / iPad</span><h2 class="text-3xl font-bold text-white">Set up iPhone or iPad mobile access</h2><p class="mt-3 text-gray-300 leading-relaxed">Use the official Home Assistant Companion App for iOS or iPadOS and connect with your Burghscape Remote URL.</p><div class="mt-5 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6"><div class="mobile-card"><h3 class="text-xl font-semibold text-white">iPhone / iPad Companion App</h3><p class="mt-1 text-sm text-purple-300">Apple App Store</p><ol class="mt-4 space-y-3 text-gray-300 list-decimal list-inside"><li>Install the official Home Assistant Companion App.</li><li>Open it.</li><li>Select Connect to my Home Assistant server.</li><li>Select Enter address manually when needed.</li><li>Enter your customer-specific Burghscape Remote URL.</li><li>Sign in with Home Assistant credentials.</li><li>Choose a device name.</li><li>Enable notifications if wanted.</li><li>For full presence functionality, choose Allow While Using the App initially, then choose Allow Always when subsequently prompted.</li><li>Critical Notifications are optional and may bypass silent or Focus modes.</li></ol><div class="mt-5 data-field"><div class="text-xs uppercase tracking-[0.16em] text-gray-500">Server address</div><div class="mt-2 flex items-center gap-2"><span class="field-value flex-1">__REMOTE_URL__</span><button class="copy-button" data-copy="__REMOTE_URL__">Copy</button></div></div></div><div class="media-card" data-image="step9-ios-companion-app.png"><div><div class="text-lg font-semibold text-white">iPhone / iPad App Setup</div><p class="mt-2 text-sm text-gray-400">Placeholder for <code>step9-ios-companion-app.png</code>. Show Connect to my Home Assistant server, Enter address manually, the Remote URL field, device name, notifications, Allow While Using the App, Allow Always, and Critical Notifications prompts.</p></div></div></div>
+                </article>
+
+                <article class="stage-panel p-5 sm:p-7" data-stage="9">
+                    <span class="pill mb-4">Finish</span><h2 class="text-4xl font-bold text-white">You’re Connected</h2><p class="mt-3 text-gray-300 leading-relaxed">Your Burghscape Home Cloud setup is complete when the agent is online, remote access opens Home Assistant, and monitoring is active.</p><div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4"><div class="completion-card"><div class="text-sm text-emerald-200">Agent status</div><div class="mt-1 font-semibold text-white">__INSTANCE_STATUS__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Remote access status</div><div class="mt-1 font-semibold text-white">Use __REMOTE_URL__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Monitoring status</div><div class="mt-1 font-semibold text-white">Reports automatically after the agent connects</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Mobile access</div><div class="mt-1 font-semibold text-white">Use the same Remote URL in the app</div></div></div><div class="mt-6 flex flex-wrap gap-3"><a href="/portal" class="btn-primary">Go to Dashboard</a><a href="__REMOTE_URL__" target="_blank" rel="noopener" class="btn-secondary">Open Home Assistant</a></div><div class="callout tip mt-5"><strong>Burghscape Tip</strong>Keep your Burghscape Remote URL bookmarked. It is the address you will use for browser and mobile access.</div>
+                </article>
+
+                <div class="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <button id="prev-stage" class="btn-secondary" type="button">Previous</button>
+                    <button id="mark-stage" class="btn-secondary" type="button">Mark this stage complete</button>
+                    <button id="next-stage" class="btn-primary" type="button">Next</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        (function() {
+            const stageCount = 10;
+            const storageKey = 'burghscape-onboarding-progress-__CLIENT_ID__';
+            const pathKey = storageKey + '-setup-path';
+            let setupPath = localStorage.getItem(pathKey) || 'self';
+            let current = Math.min(stageCount - 1, Math.max(0, parseInt(localStorage.getItem(storageKey + '-current') || '0', 10)));
+            let completed = new Set(JSON.parse(localStorage.getItem(storageKey) || '[]'));
+            const panels = Array.from(document.querySelectorAll('[data-stage]'));
+            const tabs = Array.from(document.querySelectorAll('[data-stage-target]'));
+            const pathButtons = Array.from(document.querySelectorAll('[data-path-choice]'));
+            const pathFeedback = document.getElementById('path-feedback');
+            const fill = document.getElementById('progress-fill');
+            const label = document.getElementById('progress-label');
+            const prev = document.getElementById('prev-stage');
+            const next = document.getElementById('next-stage');
+            const mark = document.getElementById('mark-stage');
+
+            function stageAllowed(index) {
+                const panel = panels[index];
+                return !panel || panel.dataset.path !== 'self' || setupPath === 'self';
+            }
+            function firstAllowed() {
+                for (let i = 0; i < stageCount; i += 1) if (stageAllowed(i)) return i;
+                return 0;
+            }
+            function nextAllowedIndex(from, direction) {
+                let index = from + direction;
+                while (index >= 0 && index < stageCount) {
+                    if (stageAllowed(index)) return index;
+                    index += direction;
+                }
+                return from;
+            }
+            function visibleCompletedCount() {
+                return Array.from(completed).filter((index) => stageAllowed(index)).length;
+            }
+            function visibleStageCount() {
+                return panels.filter((_, index) => stageAllowed(index)).length || stageCount;
+            }
+            function save() {
+                localStorage.setItem(storageKey, JSON.stringify(Array.from(completed)));
+                localStorage.setItem(storageKey + '-current', String(current));
+                localStorage.setItem(pathKey, setupPath);
+            }
+            function render() {
+                if (!stageAllowed(current)) current = setupPath === 'connected' ? 6 : firstAllowed();
+                panels.forEach((panel, index) => panel.classList.toggle('active', index === current && stageAllowed(index)));
+                tabs.forEach((tab, index) => {
+                    const allowed = stageAllowed(index);
+                    tab.classList.toggle('hidden', !allowed);
+                    tab.classList.toggle('active', allowed && index === current);
+                    const number = tab.querySelector('.stage-number');
+                    if (number) number.textContent = completed.has(index) ? '✓' : String(index + 1);
+                });
+                pathButtons.forEach((button) => button.classList.toggle('active', button.dataset.pathChoice === setupPath));
+                const percent = Math.round((visibleCompletedCount() / visibleStageCount()) * 100);
+                fill.style.width = percent + '%';
+                label.textContent = percent + '%';
+                prev.disabled = current === firstAllowed();
+                next.textContent = nextAllowedIndex(current, 1) === current ? 'Finish' : 'Next';
+                mark.textContent = completed.has(current) ? 'Stage complete' : 'Mark this stage complete';
+                mark.disabled = completed.has(current);
+                tabs[current]?.scrollIntoView({block:'nearest', inline:'nearest'});
+            }
+            function go(index) {
+                const target = Math.min(stageCount - 1, Math.max(0, index));
+                current = stageAllowed(target) ? target : (target > current ? nextAllowedIndex(current, 1) : nextAllowedIndex(current, -1));
+                save(); render();
+            }
+            tabs.forEach((tab) => tab.addEventListener('click', () => go(parseInt(tab.dataset.stageTarget, 10))));
+            pathButtons.forEach((button) => button.addEventListener('click', () => {
+                setupPath = button.dataset.pathChoice;
+                if (setupPath === 'connected' && current < 6) current = 6;
+                if (pathFeedback) pathFeedback.textContent = setupPath === 'connected' ? 'Installation-only stages are collapsed. Continue with Remote URL and mobile setup.' : 'Full self-install setup path selected.';
+                save(); render();
+            }));
+            document.querySelector('[data-path-reset]')?.addEventListener('click', () => {
+                setupPath = 'self';
+                if (pathFeedback) pathFeedback.textContent = 'Full self-install setup path selected.';
+                save(); render();
+            });
+            prev.addEventListener('click', () => go(nextAllowedIndex(current, -1)));
+            next.addEventListener('click', () => {
+                completed.add(current);
+                current = nextAllowedIndex(current, 1);
+                save(); render();
+            });
+            mark.addEventListener('click', () => { completed.add(current); save(); render(); });
+            document.querySelectorAll('[data-start-action]').forEach((el) => el.addEventListener('click', () => setTimeout(() => go(current), 0)));
+            document.querySelectorAll('[data-copy]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const value = button.getAttribute('data-copy');
+                    try {
+                        await navigator.clipboard.writeText(value);
+                        const previous = button.textContent;
+                        button.textContent = 'Copied';
+                        const feedback = document.getElementById('copy-feedback');
+                        if (feedback) feedback.textContent = 'Copied successfully';
+                        setTimeout(() => { button.textContent = previous; if (feedback) feedback.textContent = ''; }, 1600);
+                    } catch (err) {
+                        button.textContent = 'Copy failed';
+                        const feedback = document.getElementById('copy-feedback');
+                        if (feedback) feedback.textContent = 'Copy failed';
+                    }
+                });
+            });
+            document.querySelectorAll('.media-card[data-image]').forEach((card) => {
+                const filename = card.getAttribute('data-image');
+                const img = new Image();
+                img.onload = () => { card.innerHTML = ''; img.alt = card.textContent || filename; card.appendChild(img); };
+                img.onerror = () => {};
+                img.src = '/static/docs/onboarding/' + filename;
+            });
+            render();
+        })();
+    </script>
+</body>
+</html>
+"""
+
 CHANGE_PASSWORD_HTML="""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -561,32 +920,7 @@ CHANGE_PASSWORD_HTML="""<!DOCTYPE html>
 
     <div class="relative z-10 w-full max-w-md">
         <div class="text-center mb-8 logo-float">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="height:168px;width:auto;display:block;margin:0 auto 12px">
-                <defs>
-                    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#1a1a3e"/>
-                        <stop offset="100%" style="stop-color:#0d0d24"/>
-                    </linearGradient>
-                    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#a78bfa"/>
-                        <stop offset="100%" style="stop-color:#7c3aed"/>
-                    </linearGradient>
-                    <filter id="glow">
-                        <feGaussianBlur stdDeviation="2" result="blur"/>
-                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                </defs>
-                <circle cx="100" cy="100" r="95" fill="url(#bg)" stroke="url(#accent)" stroke-width="2" opacity="0.9"/>
-                <path d="M100 30 L150 50 L150 100 Q150 140 100 170 Q50 140 50 100 L50 50 Z" fill="none" stroke="#a78bfa" stroke-width="2.5" filter="url(#glow)"/>
-                <path d="M100 60 L130 80 L130 120 L70 120 L70 80 Z" fill="none" stroke="#c4b5fd" stroke-width="2"/>
-                <line x1="100" y1="60" x2="100" y1="80" stroke="#c4b5fd" stroke-width="2"/>
-                <rect x="92" y="100" width="16" height="20" fill="#a78bfa" rx="2"/>
-                <circle cx="100" cy="45" r="4" fill="#a78bfa"/>
-                <circle cx="75" cy="100" r="3" fill="#7c3aed"/>
-                <circle cx="125" cy="100" r="3" fill="#7c3aed"/>
-                <path d="M60 70 Q55 80 60 90" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.6"/>
-                <path d="M140 70 Q145 80 140 90" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.6"/>
-            </svg>
+            <img src="/static/brand/burghscape-shield.svg" alt="Burghscape" style="height:112px;width:auto;max-width:168px;object-fit:contain;display:block;margin:0 auto 12px">
             <h1 class="text-2xl font-bold text-white mt-3" style="letter-spacing:-0.5px">Burghscape</h1>
             <p class="text-xs text-purple-400 mt-1" style="letter-spacing:2px;text-transform:uppercase">Pty Ltd</p>
         </div>
@@ -697,25 +1031,19 @@ async def portal_backup_download(backup_id: int, request: Request):
             raise HTTPException(status_code=404, detail="Backup not found")
         if backup.status != "completed":
             raise HTTPException(status_code=400, detail="Backup not ready")
+        from pathlib import PurePosixPath
         from storage.factory import get_client_storage_backend
         from config import get_settings
-        storage_config = {"backend": backup.storage_backend}
         settings = get_settings()
-        if backup.storage_backend == "r2":
-            storage_config.update({
-                "account_id": settings.R2_ACCOUNT_ID,
-                "access_key_id": settings.R2_ACCESS_KEY_ID,
-                "secret_access_key": settings.R2_SECRET_ACCESS_KEY,
-                "bucket": settings.R2_BUCKET,
-            })
+        key_path = PurePosixPath(backup.storage_key or "")
+        if not backup.storage_key or backup.storage_key.startswith("/") or ".." in key_path.parts or len(key_path.parts) < 2 or key_path.parts[0] != str(user.client_id):
+            raise HTTPException(status_code=403, detail="Invalid backup ownership")
+        storage_config = {"backend": "local", "path": getattr(settings, "BACKUP_LOCAL_PATH", "/backups/client-backups")}
         backend = get_client_storage_backend(storage_config)
-        download_url = await backend.generate_presigned_download_url(
-            key=backup.storage_key,
-            expires_in=3600,
-            filename=backup.filename,
-        )
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=download_url)
+        path = backend._full_path(backup.storage_key)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Backup object not found")
+        return FileResponse(path, media_type="application/gzip", filename=backup.filename)
 
 
 @router.get("/api/portal/report")
@@ -781,7 +1109,7 @@ async def download_report(request: Request):
             if instance.disk_total_gb:
                 disk_info += f" / {instance.disk_total_gb:.1f} GB total ({instance.disk_usage_percent:.1f}%)"
         
-        logo_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="height:50px;width:auto;vertical-align:middle;margin-right:12px;"><defs><linearGradient id="lbg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#1a1a3e"/><stop offset="100%" style="stop-color:#0d0d24"/></linearGradient></defs><circle cx="100" cy="100" r="95" fill="url(#lbg)" stroke="#7c3aed" stroke-width="2.5"/><path d="M100 30 L150 50 L150 100 Q150 140 100 170 Q50 140 50 100 L50 50 Z" fill="none" stroke="#a78bfa" stroke-width="2.5"/><path d="M100 60 L130 80 L130 120 L70 120 L70 80 Z" fill="none" stroke="#c4b5fd" stroke-width="2"/><rect x="92" y="100" width="16" height="20" fill="#a78bfa" rx="2"/><circle cx="100" cy="45" r="5" fill="#a78bfa"/></svg>"""
+        logo_svg = """<img src="/static/brand/burghscape-shield.svg" alt="Burghscape" style="height:50px;width:auto;max-width:84px;object-fit:contain;vertical-align:middle;margin-right:12px;">"""
 
         report_html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>System Report - {client.name}</title>
@@ -881,6 +1209,66 @@ async def portal_change_password_page(request: Request):
 
 
 
+@router.get("/portal/getting-started", response_class=HTMLResponse)
+async def portal_getting_started(request: Request):
+    """Authenticated Getting Started guide for client onboarding."""
+    token = request.cookies.get("portal_token", "")
+    if not token:
+        return HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
+
+    async with async_session() as db:
+        user_id = portal_sessions.get(token)
+        if not user_id:
+            return HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
+
+        result = await db.execute(select(ClientUser).where(ClientUser.id == user_id))
+        user = result.scalars().first()
+        if not user or not user.is_active:
+            return HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
+
+        if user.force_password_change:
+            return HTMLResponse(status_code=302, headers={"Location": "/portal/change-password"})
+
+        client_result = await db.execute(select(Client).where(Client.id == user.client_id))
+        client = client_result.scalars().first()
+        if not client:
+            return HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
+
+        inst_result = await db.execute(
+            select(HomeAssistantInstance).where(
+                HomeAssistantInstance.client_id == client.id
+            ).order_by(HomeAssistantInstance.last_seen.desc())
+        )
+        instance = inst_result.scalars().first()
+
+        remote_url = f"https://{client.subdomain}.mybeacon.co.za"
+        client_portal_url = "https://client.mybeacon.co.za/portal/login"
+        online = bool(instance and instance.is_online)
+        status_text = "Online" if online else "Setup incomplete"
+        status_class = "text-emerald-300" if online else "text-amber-300"
+        status_dot_class = "status-online" if online else "status-pending"
+        start_action_label = "Continue Setup" if not online else "Review Setup"
+        subscription_note = "Your Burghscape Subscription Token is masked by default under Your Burghscape Details on the dashboard. Use Show only when you are ready to paste it into the Agent configuration."
+
+        replacements = {
+            "__CLIENT_ID__": str(client.id),
+            "__CLIENT_NAME__": escape(client.name or "Client", quote=True),
+            "__USER_NAME__": escape(user.name or client.name or "there", quote=True),
+            "__REMOTE_URL__": escape(remote_url, quote=True),
+            "__CLIENT_PORTAL_URL__": escape(client_portal_url, quote=True),
+            "__INSTANCE_STATUS__": escape(status_text, quote=True),
+            "__STATUS_CLASS__": status_class,
+            "__STATUS_DOT_CLASS__": status_dot_class,
+            "__START_ACTION_LABEL__": start_action_label,
+            "__SUBSCRIPTION_TOKEN_NOTE__": escape(subscription_note, quote=True),
+            "__ADDON_REPOSITORY_URL__": escape(ADDON_REPOSITORY_URL, quote=True),
+        }
+        html = GETTING_STARTED_HTML
+        for key, value in replacements.items():
+            html = html.replace(key, value)
+        return html
+
+
 @router.get("/portal/login", response_class=HTMLResponse)
 async def portal_login_page():
     return LOGIN_HTML
@@ -918,6 +1306,19 @@ async def client_portal(request: Request):
         client = client_result.scalars().first()
         if not client:
             return HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
+
+        token_result = await db.execute(
+            select(SubscriptionToken).where(
+                SubscriptionToken.client_id == client.id,
+                SubscriptionToken.is_active == True
+            ).order_by(SubscriptionToken.created_at.desc())
+        )
+        active_subscription_token = token_result.scalars().first()
+        subscription_token_secret = active_subscription_token.token if active_subscription_token else ""
+        subscription_token_masked = "••••••••••••••••" if subscription_token_secret else "Not available"
+        subscription_token_disabled = "" if subscription_token_secret else "disabled"
+        remote_url = f"https://{client.subdomain}.mybeacon.co.za"
+        client_portal_url = "https://client.mybeacon.co.za/portal/login"
 
         # Get instance
         inst_result = await db.execute(
@@ -974,6 +1375,24 @@ async def client_portal(request: Request):
         hours_remaining = max(0, hours_included - hours_used)
         hours_percent = min(100, (hours_used / hours_included * 100)) if hours_included > 0 else 0
         online = instance.is_online if instance else False
+        if online:
+            onboarding_banner_html = ""
+            setup_nav_label = "Getting Started"
+            setup_nav_class = "text-gray-400 hover:text-purple-400 transition nav-link text-xs md:text-sm"
+        else:
+            onboarding_banner_html = """
+        <div class="mb-6 rounded-3xl border border-amber-400/25 bg-gradient-to-br from-amber-500/12 via-purple-500/10 to-gray-900/80 p-5 sm:p-6 shadow-2xl shadow-black/20">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div class="min-w-0">
+                    <div class="inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-200">Setup incomplete</div>
+                    <h2 class="mt-3 text-2xl font-bold text-white">Complete your Burghscape Home Cloud setup</h2>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Your Home Assistant instance is not online in the Burghscape Client Portal yet. Follow the guided setup to connect the Burghscape Agent and activate your Remote URL.</p>
+                </div>
+                <a href="/portal/getting-started" class="inline-flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-purple-600 to-violet-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition hover:from-purple-500 hover:to-violet-600">Complete Setup</a>
+            </div>
+        </div>"""
+            setup_nav_label = "Complete Setup"
+            setup_nav_class = "rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1.5 text-amber-200 hover:bg-amber-400/15 transition nav-link text-xs md:text-sm font-semibold"
 
         # Calculate addon/integration counts from JSON
         addons_list = instance.addons if instance and instance.addons else []
@@ -1026,29 +1445,21 @@ async def client_portal(request: Request):
         # HA News section with links to official blog
         latest_ha_version = instance.ha_version if instance else "N/A"
         ha_news_section = f'''
-        <div class="card rounded-2xl p-6 mb-6">
-            <div class="flex items-center justify-between mb-4">
+        <div class="card portal-card p-5 sm:p-6 min-w-0">
+            <div class="info-row mb-4">
                 <h2 class="text-lg font-semibold text-white">Home Assistant</h2>
-                <span class="text-xs bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full">Running: {latest_ha_version}</span>
+                <span class="text-xs bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full">Version {latest_ha_version}</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <a href="https://www.home-assistant.io/blog/categories/release-notes/" target="_blank" rel="noopener"
-                   class="flex items-center gap-3 bg-purple-500/5 hover:bg-purple-500/10 rounded-xl p-4 border border-purple-500/10 transition group">
-                    <svg class="w-5 h-5 text-purple-400 group-hover:text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    <div>
-                        <p class="text-sm font-medium text-white">Release Notes</p>
-                        <p class="text-xs text-gray-500">Monthly HA updates &amp; new features</p>
-                    </div>
-                    <svg class="w-4 h-4 text-gray-600 ml-auto group-hover:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                   class="portal-action">
+                    <span class="block text-sm font-semibold text-white">Release Notes</span>
+                    <span class="portal-action-text mt-1 block text-xs text-gray-400">Monthly Home Assistant updates</span>
                 </a>
                 <a href="https://www.home-assistant.io/blog/categories/breaking-changes/" target="_blank" rel="noopener"
-                   class="flex items-center gap-3 bg-amber-500/5 hover:bg-amber-500/10 rounded-xl p-4 border border-amber-500/10 transition group">
-                    <svg class="w-5 h-5 text-amber-400 group-hover:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
-                    <div>
-                        <p class="text-sm font-medium text-white">Breaking Changes</p>
-                        <p class="text-xs text-gray-500">Important changes to be aware of</p>
-                    </div>
-                    <svg class="w-4 h-4 text-gray-600 ml-auto group-hover:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                   class="portal-action">
+                    <span class="block text-sm font-semibold text-white">Breaking Changes</span>
+                    <span class="portal-action-text mt-1 block text-xs text-gray-400">Compatibility notes to review</span>
                 </a>
             </div>
         </div>'''
@@ -1127,6 +1538,16 @@ async def client_portal(request: Request):
                     next_backup_str = nb.strftime("%Y-%m-%d %H:%M")
 
         return PORTAL_HTML.format(
+            onboarding_banner_html=onboarding_banner_html,
+            setup_nav_label=setup_nav_label,
+            setup_nav_class=setup_nav_class,
+            addon_repository_url=escape(ADDON_REPOSITORY_URL, quote=True),
+            subscription_token_secret=escape(subscription_token_secret, quote=True),
+            subscription_token_masked=subscription_token_masked,
+            subscription_token_disabled=subscription_token_disabled,
+            remote_url=escape(remote_url, quote=True),
+            client_portal_url=escape(client_portal_url, quote=True),
+            instance_name=escape((instance.name or instance.hostname or client.name) if instance else client.name, quote=True),
             client_name=client.name,
             subdomain=client.subdomain,
             status_class="bg-green-900 text-green-300" if client.status.value == "active" else "bg-red-900 text-red-300",
@@ -1135,33 +1556,33 @@ async def client_portal(request: Request):
             online_dot_class="status-online" if online else "status-offline",
             online_text_class="text-green-400" if online else "text-red-400",
             online_status="Online" if online else "Offline",
-            ha_version=instance.ha_version or "N/A",
-            entity_count=instance.entities_count or 0,
-            addon_count_display="?" if addon_count == 0 and integration_count > 0 else addon_count,
+            ha_version=(instance.ha_version if instance else "N/A"),
+            entity_count=(instance.entities_count if instance else 0),
+            addon_count_display=(("?" if addon_count == 0 and integration_count > 0 else addon_count) if instance else 0),
             addon_count_suffix=" (pending)" if addon_count == 0 and integration_count > 0 else "",
             addon_count=addon_count,
-            integration_count=integration_count,
+            integration_count=(integration_count if instance else 0),
             user_name=user.name,
             db_size=db_size,
             uptime=uptime,
             updates_count=updates_html,
             updates_class="text-emerald-400",
-            last_seen=instance.last_seen.strftime("%Y-%m-%d %H:%M") if instance and instance.last_seen else "Never",
+            last_seen=((instance.last_seen.strftime("%Y-%m-%d %H:%M") if instance.last_seen else "Never") if instance else "Never"),
             ha_news_section=ha_news_section,
             tickets_html=tickets_html,
             hours_used=hours_used,
             hours_included=hours_included,
             hours_remaining=hours_remaining,
             hours_percent=hours_percent,
-            cpu_percent=instance.cpu_usage_percent if instance and instance.cpu_usage_percent else 0,
-            memory_percent=instance.memory_usage_percent if instance and instance.memory_usage_percent else 0,
-            memory_used_gb=instance.memory_used_gb if instance and instance.memory_used_gb else 0,
-            memory_total_gb=instance.memory_total_gb if instance and instance.memory_total_gb else 0,
-            disk_percent=instance.disk_usage_percent if instance and instance.disk_usage_percent else 0,
-            disk_used_gb=instance.disk_used_gb if instance and instance.disk_used_gb else 0,
-            disk_total_gb=instance.disk_total_gb if instance and instance.disk_total_gb else 0,
+            cpu_percent=(instance.cpu_usage_percent if instance else 0),
+            memory_percent=(instance.memory_usage_percent if instance else 0),
+            memory_used_gb=(instance.memory_used_gb if instance else 0),
+            memory_total_gb=(instance.memory_total_gb if instance else 0),
+            disk_percent=(instance.disk_usage_percent if instance else 0),
+            disk_used_gb=(instance.disk_used_gb if instance else 0),
+            disk_total_gb=(instance.disk_total_gb if instance else 0),
             backup_badge_class="bg-green-900 text-green-300" if backup_enabled else "bg-gray-700 text-gray-400",
-            backup_badge_text="Active" if backup_enabled else "Not Configured",
+            backup_badge_text="Local backup detected" if backup_enabled else "No local backup detected",
             last_backup_str=last_backup_str,
             next_backup_str=next_backup_str,
 

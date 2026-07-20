@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Button, Card, Input, PageHeader, StatusDot } from '../components/ui';
 
 export default function Settings() {
   const [health, setHealth] = useState(null);
@@ -59,76 +60,66 @@ export default function Settings() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">Settings</h1>
+      <PageHeader title="Settings" />
       
-      {/* Change Password */}
-      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-6">
+      <Card compact className="mb-6">
         <h2 className="text-lg font-semibold text-white mb-4">Change Password</h2>
         <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
-          <input
+          <Input
             type="password"
             placeholder="Current password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
             required
           />
-          <input
+          <Input
             type="password"
             placeholder="New password (min 8 chars)"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
             required
           />
-          <input
+          <Input
             type="password"
             placeholder="Confirm new password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
             required
           />
           
           {passwordMsg && (
-            <div className={`text-sm rounded-lg px-3 py-2 ${passwordMsg.type === 'success' ? 'bg-green-900/50 text-green-300 border border-green-700' : 'bg-red-900/50 text-red-300 border border-red-700'}`}>
+            <div className={passwordMsg.type === 'success' ? 'alert-success py-2 text-sm' : 'alert-error py-2 text-sm'}>
               {passwordMsg.text}
             </div>
           )}
           
-          <button
-            type="submit"
-            disabled={passwordLoading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium px-4 py-2 rounded-lg transition"
-          >
+          <Button type="submit" disabled={passwordLoading}>
             {passwordLoading ? 'Changing...' : 'Change Password'}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
 
-      {/* System Status */}
-      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-6">
+      <Card compact className="mb-6">
         <h2 className="text-lg font-semibold text-white mb-4">System Status</h2>
         {loading ? (
           <div className="text-gray-400">Checking...</div>
         ) : health ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${health.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <StatusDot active={health.status === 'healthy'} size="md" />
               <span className="text-white">Backend: {health.status}</span>
             </div>
           </div>
         ) : (
-          <div className="text-red-400">Unable to connect to backend</div>
+          <div className="text-danger-text">Unable to connect to backend</div>
         )}
-        {error && <div className="text-red-400 text-sm mt-2">Error: {error}</div>}
-      </div>
+        {error && <div className="text-danger-text text-sm mt-2">Error: {error}</div>}
+      </Card>
 
-      {/* Platform Info */}
-      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <Card compact>
         <h2 className="text-lg font-semibold text-white mb-2">Platform Settings</h2>
         <p className="text-gray-400 text-sm">Cloudflare and OneDrive credentials are configured via the .env file on the server.</p>
-      </div>
+      </Card>
     </div>
   );
 }

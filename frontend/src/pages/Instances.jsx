@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Card, EmptyState, ErrorState, LiveStatus, LoadingState, PageHeader, ProgressBar, StatusDot } from '../components/ui';
 
 export default function Instances() {
   const [instances, setInstances] = useState([]);
@@ -27,30 +28,21 @@ export default function Instances() {
     return () => clearInterval(id);
   }, [fetchInstances]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-400">Loading...</div></div>;
-  if (error) return <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-300">Error: {error}</div>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} />;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">HA Instances</h1>
-        <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs text-gray-500">Updated {lastUpdated.toLocaleTimeString()}</span>}
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-xs text-gray-500">Live</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader title="HA Instances" meta={<LiveStatus lastUpdated={lastUpdated} />} />
       {instances.length === 0 ? (
-        <div className="text-gray-400">No instances found.</div>
+        <EmptyState>No instances found.</EmptyState>
       ) : (
         <div className="space-y-4">
           {instances.map(i => (
-            <div key={i.id} className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+            <Card key={i.id} compact>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${i.is_online ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                  <StatusDot active={i.is_online} size="md" pulse={i.is_online} />
                   <h3 className="text-lg font-semibold text-white">{i.name || 'Unnamed'}</h3>
                 </div>
                 <span className="text-sm text-gray-400">{i.ha_version || 'Unknown'}</span>
@@ -63,12 +55,10 @@ export default function Instances() {
                 <div>
                   <div className="text-gray-500">Disk Usage</div>
                   <div className="text-white">{i.disk_usage_percent != null ? i.disk_usage_percent + '%' : 'N/A'}</div>
-                  <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
-                    <div className="bg-blue-500 h-full rounded-full" style={{width: `${i.disk_usage_percent || 0}%`}}></div>
-                  </div>
+                  <ProgressBar value={i.disk_usage_percent || 0} className="mt-1 h-1.5" />
                 </div>
                 <div>
-                  <div className="text-gray-500">Last Backup</div>
+                  <div className="text-gray-500">Last Local HA Backup</div>
                   <div className="text-white">{i.last_backup || 'Never'}</div>
                 </div>
                 <div>
@@ -78,12 +68,10 @@ export default function Instances() {
               </div>
               {i.updates_available && i.updates_available.length > 0 && (
                 <div className="mt-3">
-                  <span className="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded-full">
-                    Updates: {i.updates_available.join(', ')}
-                  </span>
+                  <span className="badge badge-warning">Updates: {i.updates_available.join(', ')}</span>
                 </div>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
