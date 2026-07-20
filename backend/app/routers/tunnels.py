@@ -256,12 +256,12 @@ async def get_tunnel_config_for_addon(
 
     # Return both naming conventions for backward compatibility with current agent code
     return {
-        tunnel_id: client.cloudflare_tunnel_id,
-        tunnel_token: client.cloudflare_tunnel_token,
-        hostname: hostname,
-        account_tag: CF_ACCOUNT_ID,
-        id: client.cloudflare_tunnel_id,
-        token: client.cloudflare_tunnel_token,
+        "tunnel_id": client.cloudflare_tunnel_id,
+        "tunnel_token": client.cloudflare_tunnel_token,
+        "hostname": hostname,
+        "account_tag": CF_ACCOUNT_ID,
+        "id": client.cloudflare_tunnel_id,
+        "token": client.cloudflare_tunnel_token,
     }
 
 
