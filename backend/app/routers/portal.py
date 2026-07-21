@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import async_session
 from models import Backup, Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
 from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename
+from support_hours import calculate_support_hours, format_hours, support_ticket_notice
 
 router = APIRouter()
 
@@ -154,9 +155,9 @@ PORTAL_HTML = """<!DOCTYPE html>
 
         <section class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="support-heading" class="text-lg font-semibold text-white">Account &amp; Support</h2><p class="text-sm text-gray-500 mt-1">Support usage, tickets and diagnostic report</p></div><a href="/portal/getting-started" class="text-sm text-purple-300">Getting Started</a></div>
-            <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Support hours</div><div class="text-white mt-1">{hours_used}h used / {hours_included}h included</div><div class="text-xs text-gray-500 mt-1">{hours_remaining}h remaining</div></div><div class="metric-tile"><div class="text-gray-500">Open tickets</div><div class="text-white mt-1">{open_ticket_count}</div></div><div class="metric-tile"><div class="text-gray-500">Latest ticket</div><div class="text-white mt-1">{latest_ticket_status}</div></div></div>
+            <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Included support</div><div class="text-white mt-1">{hours_included}h</div></div><div class="metric-tile"><div class="text-gray-500">Support time logged</div><div class="text-white mt-1">{hours_logged}h</div></div>{support_remaining_html}<div class="metric-tile"><div class="text-gray-500">Potentially billable</div><div class="text-white mt-1">{hours_billable}h</div></div><div class="metric-tile"><div class="text-gray-500">Open tickets</div><div class="text-white mt-1">{open_ticket_count}</div></div><div class="metric-tile"><div class="text-gray-500">Latest ticket</div><div class="text-white mt-1">{latest_ticket_status}</div></div></div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5"><button type="button" onclick="document.getElementById('ticket-form').classList.toggle('hidden')" class="compact-action">New Support Ticket</button><a href="mailto:support@mybeacon.co.za" class="touch-action border border-white/10 text-white">Contact Support</a><a href="/api/portal/report" target="_blank" class="touch-action border border-white/10 text-white">Download Report</a></div>
-            <div id="ticket-form" class="hidden mt-5 p-4 bg-gray-900/60 rounded-xl border border-purple-500/10"><input type="text" id="ticket-title" placeholder="Ticket title" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"><textarea id="ticket-desc" placeholder="How can we help?" rows="3" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"></textarea><div class="flex flex-col sm:flex-row gap-2"><select id="ticket-priority" class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 text-white"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select><button type="button" onclick="submitTicket()" class="compact-action">Submit Ticket</button></div></div>
+            <div id="ticket-form" class="hidden mt-5 p-4 bg-gray-900/60 rounded-xl border border-purple-500/10">{support_ticket_notice_html}<input type="text" id="ticket-title" placeholder="Ticket title" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"><textarea id="ticket-desc" placeholder="How can we help?" rows="3" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"></textarea><div class="flex flex-col sm:flex-row gap-2"><select id="ticket-priority" class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 text-white"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select><button type="button" onclick="submitTicket()" class="compact-action">Submit Ticket</button></div></div>
             <div class="mt-5"><h3 class="font-semibold text-white mb-3">Recent tickets</h3><div id="tickets-list" class="space-y-2 max-h-56 overflow-y-auto">{tickets_html}</div></div>
         </section>
     </main>
@@ -1206,9 +1207,10 @@ async def client_portal(request: Request):
         tickets_result = await db.execute(
             select(SupportTicket).where(
                 SupportTicket.client_id == client.id
-            ).order_by(SupportTicket.created_at.desc()).limit(10)
+            ).order_by(SupportTicket.created_at.desc())
         )
-        tickets = tickets_result.scalars().all()
+        all_tickets = tickets_result.scalars().all()
+        tickets = all_tickets[:10]
 
         # Get portal users
         users_result = await db.execute(
@@ -1246,10 +1248,15 @@ async def client_portal(request: Request):
         if not users:
             users_html = '<p class="text-gray-500 text-sm">No users yet.</p>'
 
-        hours_included = client.monthly_hours_included
-        hours_used = client.hours_used_this_month
-        hours_remaining = max(0, hours_included - hours_used)
-        hours_percent = min(100, (hours_used / hours_included * 100)) if hours_included > 0 else 0
+        support_hours = calculate_support_hours(client.monthly_hours_included, (ticket.hours_used for ticket in all_tickets))
+        hours_included = format_hours(support_hours["included"])
+        hours_logged = format_hours(support_hours["logged"])
+        hours_billable = format_hours(support_hours["potentially_billable"])
+        support_remaining_html = ""
+        if support_hours["included"] > 0:
+            support_remaining_html = '<div class="metric-tile"><div class="text-gray-500">Remaining included support</div><div class="text-white mt-1">{}h</div></div>'.format(format_hours(support_hours["remaining"]))
+        tier_value = client.tier.value if hasattr(client.tier, "value") else str(client.tier or "")
+        support_ticket_notice_html = support_ticket_notice(tier_value)
         online = instance.is_online if instance else False
         if online:
             onboarding_banner_html = ""
@@ -1480,10 +1487,11 @@ async def client_portal(request: Request):
             open_ticket_count=open_ticket_count,
             latest_ticket_status=latest_ticket_status,
             native_backup_html=native_backup_html,
-            hours_used=hours_used,
             hours_included=hours_included,
-            hours_remaining=hours_remaining,
-            hours_percent=hours_percent,
+            hours_logged=hours_logged,
+            hours_billable=hours_billable,
+            support_remaining_html=support_remaining_html,
+            support_ticket_notice_html=support_ticket_notice_html,
             cpu_percent=(instance.cpu_usage_percent if instance else 0),
             memory_percent=(instance.memory_usage_percent if instance else 0),
             memory_used_gb=(instance.memory_used_gb if instance else 0),

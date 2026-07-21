@@ -1,5 +1,12 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.1.1 Support hours calculation and plan behaviour
+
+- Corrected Client Portal support-hour aggregation by summing existing `SupportTicket.hours_used` values instead of displaying the unsynchronized `Client.hours_used_this_month` field.
+- Separated included support, actual support time logged, remaining included support, and potentially billable time using plan-compatible calculations; no billing was implemented.
+- Added a non-blocking Basic-plan notice before ticket submission while preserving ticket creation for clients with zero included hours.
+- Preserved all ticket records, statuses, priorities, submission behavior, and support-plan billing rules.
+
 ## 2026-07-21 — RC1.1 Client Portal UX and mobile refinement
 
 - Reorganized the Client Portal into a compact instance header, System Overview, Environment & Updates, consolidated Backup Protection, and Account & Support.
