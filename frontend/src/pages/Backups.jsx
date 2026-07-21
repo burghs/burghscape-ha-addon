@@ -45,7 +45,7 @@ export default function Backups() {
 
   const formatDate = (d) => {
     if (!d) return "-";
-    return new Date(d).toLocaleString();
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Johannesburg" }).format(new Date(d));
   };
 
   return (
@@ -55,7 +55,7 @@ export default function Backups() {
       <h2 className="text-white font-semibold mb-3">Managed Home Assistant Backups</h2>
       <div className="space-y-3 mb-8">
         {managedState.map((item) => { const op=item.current_operation; return (
-          <Card key={item.client_id} compact><div className="flex flex-wrap justify-between gap-4"><div><div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><StatusBadge status={op?.state || "unknown"}>{op?.state || "No operation"}</StatusBadge></div><div className="text-sm text-gray-500 mt-2">Automatic: {item.automatic_enabled ? "Enabled" : "Disabled"} · Last success: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div></div></div></Card>
+          <Card key={item.client_id} compact><div className="flex flex-wrap justify-between gap-4"><div><div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><StatusBadge status={op?.state || "unknown"}>{op?.state || "No operation"}</StatusBadge></div><div className="text-sm text-gray-500 mt-2">Managed scheduling: {item.automatic_enabled ? "Enabled" : "Not enabled"} · Last managed backup: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last managed failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div></div></div></Card>
         ); })}
         {managedState.length === 0 && <EmptyState>No managed backup state reported.</EmptyState>}
       </div>
@@ -67,11 +67,11 @@ export default function Backups() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-semibold text-white">{backup.filename}</span>
+                  <span className="font-semibold text-white">{backup.client_name} <span className="text-purple-300">· {backup.instance_name}</span></span>
                   <StatusBadge status={backup.status}>{backup.status}</StatusBadge>
                 </div>
                 <div className="mt-1 text-sm text-gray-500">
-                  {backup.client_name} · {backup.instance_name} · {formatSize(backup.size_bytes)} · {formatDate(backup.completed_at)}
+                  {backup.backup_type} · {formatSize(backup.size_bytes)} · {formatDate(backup.completed_at)} <span className="ml-2 text-gray-600">{backup.filename}</span>
                 </div>
               </div>
               <Button as="a" href={backup.download_url} download variant="primary">Download</Button>

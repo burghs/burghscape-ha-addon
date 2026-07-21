@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Backup, BackupOperation, Client, ClientUser, HomeAssistantInstance
 from routers.agent import validate_token
-from routers.backups import build_backup_file_response
+from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename
 from admin_auth import get_current_admin
 from routers.portal_state import portal_sessions
 
@@ -107,10 +107,14 @@ async def admin_backup_state(admin: dict = Depends(get_current_admin), db: Async
         client = next((item for item in clients if item.id == backup.client_id), None)
         if not client:
             continue
+        if not await is_customer_backup_available(backup, client):
+            continue
+        instance_name = instance_names.get(backup.client_id) or client.name
         backups.append({
             "filename": backup.filename,
             "client_name": client.name,
-            "instance_name": instance_names.get(backup.client_id) or client.name,
+            "instance_name": instance_name,
+            "backup_type": "Burghscape managed backup",
             "size_bytes": backup.size_bytes or 0,
             "status": backup.status,
             "completed_at": _iso(backup.completed_at or backup.created_at),
@@ -130,7 +134,8 @@ async def admin_managed_backup_download(
     client = (await db.execute(select(Client).where(Client.id == backup.client_id))).scalars().first()
     if not client:
         raise HTTPException(404, "Backup not found")
-    return await build_backup_file_response(backup, client)
+    instance = (await db.execute(select(HomeAssistantInstance).where(HomeAssistantInstance.client_id == client.id))).scalars().first()
+    return await build_backup_file_response(backup, client, meaningful_backup_filename(backup, client, instance.name if instance else client.name))
 
 @router.get("/api/portal/managed-backup-state")
 async def portal_backup_state(request: Request, db: AsyncSession = Depends(get_db)):

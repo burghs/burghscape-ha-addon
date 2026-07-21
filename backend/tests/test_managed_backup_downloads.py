@@ -68,12 +68,13 @@ class ManagedBackupDownloadTests(unittest.IsolatedAsyncioTestCase):
             ScalarResult(all_values=[]),
             ScalarResult(first=backup),
         ])
-        result = await backup_state.admin_backup_state({"username": "admin"}, list_db)
+        with patch.object(backup_state, "is_customer_backup_available", new=AsyncMock(return_value=True)):
+            result = await backup_state.admin_backup_state({"username": "admin"}, list_db)
         self.assertEqual(result["backups"][0]["client_name"], "Client Seven")
         self.assertEqual(result["backups"][0]["instance_name"], "Client Seven HA")
         self.assertEqual(result["backups"][0]["download_url"], "/api/admin/managed-backups/3/download")
 
-        download_db = SequenceDB([ScalarResult(first=backup), ScalarResult(first=client)])
+        download_db = SequenceDB([ScalarResult(first=backup), ScalarResult(first=client), ScalarResult(first=instance)])
         with patch.object(backup_state, "build_backup_file_response", new=AsyncMock(return_value="file-response")):
             response = await backup_state.admin_managed_backup_download(3, {"username": "admin"}, download_db)
         self.assertEqual(response, "file-response")
@@ -86,10 +87,11 @@ class ManagedBackupDownloadTests(unittest.IsolatedAsyncioTestCase):
     async def test_client_lists_only_completed_tenant_backups(self):
         user = SimpleNamespace(id=4, client_id=7, is_active=True)
         record = SimpleNamespace(id=3, filename="backup.tar", size_bytes=10, status="completed", started_at=None, completed_at=None)
-        db = SequenceDB([ScalarResult(first=user), ScalarResult(all_values=[record])])
+        client = SimpleNamespace(id=7, name="Client Seven")
+        db = SequenceDB([ScalarResult(first=user), ScalarResult(all_values=[record]), ScalarResult(first=client)])
         portal.portal_sessions["session"] = user.id
         try:
-            with patch.object(portal, "async_session", return_value=SessionContext(db)):
+            with patch.object(portal, "async_session", return_value=SessionContext(db)), patch.object(portal, "is_customer_backup_available", new=AsyncMock(return_value=True)):
                 result = await portal.portal_backups(Request({"portal_token": "session"}))
         finally:
             portal.portal_sessions.pop("session", None)
@@ -99,11 +101,11 @@ class ManagedBackupDownloadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_client_can_download_own_backup_but_not_another_clients(self):
         user = SimpleNamespace(id=4, client_id=7, is_active=True)
-        client = SimpleNamespace(id=7)
-        record = SimpleNamespace(id=3, client_id=7, filename="backup.tar", storage_key="7/backup.tar", status="completed")
+        client = SimpleNamespace(id=7, name="Client Seven")
+        record = SimpleNamespace(id=3, client_id=7, filename="backup.tar", storage_key="7/backup.tar", status="completed", completed_at=None, created_at=None)
         portal.portal_sessions["session"] = user.id
         try:
-            own_db = SequenceDB([ScalarResult(first=user), ScalarResult(first=record), ScalarResult(first=client)])
+            own_db = SequenceDB([ScalarResult(first=user), ScalarResult(first=record), ScalarResult(first=client), ScalarResult(first=SimpleNamespace(name="Client Seven HA"))])
             with patch.object(portal, "async_session", return_value=SessionContext(own_db)), patch.object(portal, "build_backup_file_response", new=AsyncMock(return_value="file-response")):
                 response = await portal.portal_backup_download(3, Request({"portal_token": "session"}))
             self.assertEqual(response, "file-response")
@@ -144,6 +146,20 @@ class ManagedBackupDownloadTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(Path(response.path), path)
             self.assertEqual(response.media_type, "application/x-tar")
             self.assertIn('filename="backup.tar"', response.headers["content-disposition"])
+
+
+    def test_meaningful_download_filename_uses_safe_local_time(self):
+        from datetime import datetime
+        client = SimpleNamespace(name="Jackie & Co")
+        record = SimpleNamespace(filename="internal.tar", storage_key="7/internal.tar", completed_at=datetime.fromisoformat("2026-07-21T11:01:00"), created_at=None)
+        self.assertEqual(backups.meaningful_backup_filename(record, client, "Jackies HA"), "jackie-co-jackies-ha-2026-07-21-1301.tar")
+
+    async def test_synthetic_and_zero_byte_records_are_excluded(self):
+        client = SimpleNamespace(id=7)
+        synthetic = SimpleNamespace(filename="phase2a-synthetic.tar", storage_key="7/synthetic.tar", status="completed", size_bytes=44)
+        empty = SimpleNamespace(filename="real.tar", storage_key="7/real.tar", status="completed", size_bytes=0)
+        self.assertFalse(await backups.is_customer_backup_available(synthetic, client))
+        self.assertFalse(await backups.is_customer_backup_available(empty, client))
 
 
 if __name__ == "__main__":

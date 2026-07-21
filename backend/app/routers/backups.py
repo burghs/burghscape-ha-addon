@@ -1,6 +1,7 @@
 """Backup upload/download endpoints for tenant-scoped Home Assistant backup archives."""
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import PurePosixPath
+from zoneinfo import ZoneInfo
 from typing import Optional, List
 import hashlib
 import logging
@@ -25,6 +26,7 @@ logger = logging.getLogger("burghscape.backup")
 
 ALLOWED_BACKUP_EXTENSIONS = (".tar", ".tar.gz", ".tgz")
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+DISPLAY_TIMEZONE = ZoneInfo(os.getenv("PLATFORM_TIMEZONE", "Africa/Johannesburg"))
 
 
 class InitiateUploadRequest(BaseModel):
@@ -96,6 +98,32 @@ def sanitize_backup_filename(filename: str) -> str:
     if not safe_name.lower().endswith(ALLOWED_BACKUP_EXTENSIONS):
         raise HTTPException(status_code=400, detail="Unsupported backup archive extension")
     return safe_name[:180]
+
+
+def meaningful_backup_filename(backup: Backup, client: Client, instance_name: str) -> str:
+    def component(value: str) -> str:
+        return SAFE_FILENAME_RE.sub("-", str(value or "backup").lower()).strip("-._") or "backup"
+    completed = backup.completed_at or backup.created_at or datetime.now(timezone.utc)
+    if completed.tzinfo is None:
+        completed = completed.replace(tzinfo=timezone.utc)
+    stamp = completed.astimezone(DISPLAY_TIMEZONE).strftime("%Y-%m-%d-%H%M")
+    original = sanitize_backup_filename(backup.filename or PurePosixPath(backup.storage_key).name)
+    extension = ".tar.gz" if original.lower().endswith(".tar.gz") else ".tgz" if original.lower().endswith(".tgz") else ".tar"
+    return f"{component(client.name)}-{component(instance_name)}-{stamp}{extension}"[:180]
+
+
+async def is_customer_backup_available(backup: Backup, client: Client) -> bool:
+    filename = (backup.filename or "").lower()
+    if backup.status != "completed" or (backup.size_bytes or 0) <= 0:
+        return False
+    if filename.startswith("phase2a-synthetic") or "transport-validation" in filename:
+        return False
+    try:
+        key = validate_client_storage_key(client, backup.storage_key)
+        metadata = await get_client_storage_backend(get_backup_storage_config()).get_object_metadata(key)
+        return bool(metadata and metadata.size > 0)
+    except (HTTPException, OSError, ValueError):
+        return False
 
 
 def generate_storage_key(client_id: int, filename: str) -> str:
@@ -491,7 +519,7 @@ async def get_backup_download_url(
     )
 
 
-async def build_backup_file_response(backup: Backup, client: Client):
+async def build_backup_file_response(backup: Backup, client: Client, download_filename: Optional[str] = None):
     """Build an authenticated download response through the configured storage backend."""
     if backup.status != "completed":
         raise HTTPException(status_code=400, detail="Backup not ready")
@@ -500,7 +528,7 @@ async def build_backup_file_response(backup: Backup, client: Client):
     metadata = await backend.get_object_metadata(key)
     if not metadata or metadata.size <= 0:
         raise HTTPException(status_code=404, detail="Backup object not found")
-    filename = sanitize_backup_filename(backup.filename or PurePosixPath(key).name)
+    filename = sanitize_backup_filename(download_filename or backup.filename or PurePosixPath(key).name)
     media_type = "application/gzip" if filename.lower().endswith((".tar.gz", ".tgz")) else "application/x-tar"
     if hasattr(backend, "_full_path"):
         path = backend._full_path(key)

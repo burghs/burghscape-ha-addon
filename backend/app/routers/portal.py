@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
 from models import Backup, Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
-from routers.backups import build_backup_file_response
+from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename
 
 router = APIRouter()
 
@@ -195,15 +195,15 @@ PORTAL_HTML = """<!DOCTYPE html>
 
         <!-- Managed Backup Status -->
         <div class="card portal-card p-5 sm:p-6 mb-6">
-          <div class="info-row mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backup</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Automatic backups</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last successful backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
+          <div class="info-row mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backups</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Managed scheduling</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last managed backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last managed failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
         </div>
-        <script>fetch("/api/portal/managed-backup-state",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Disabled";document.getElementById("managed-backup-success").textContent=data.last_success?new Date(data.last_success.completed_at).toLocaleString()+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?new Date(data.last_failure.failed_at).toLocaleString()+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}}).catch(()=>{{document.getElementById("managed-backup-state").textContent="Unavailable"}})</script>
+        <script>const backupDate=v=>new Intl.DateTimeFormat(undefined,{{dateStyle:"medium",timeStyle:"short",timeZone:"Africa/Johannesburg"}}).format(new Date(v));fetch("/api/portal/managed-backup-state",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Not enabled";document.getElementById("managed-backup-success").textContent=data.last_success?backupDate(data.last_success.completed_at)+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?backupDate(data.last_failure.failed_at)+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}}).catch(()=>{{document.getElementById("managed-backup-state").textContent="Unavailable"}})</script>
         <div class="card portal-card p-5 sm:p-6 mb-6">
           <h2 class="text-lg font-semibold text-white mb-4">Stored Managed Backups</h2>
           <div id="managed-backup-list" class="space-y-3 text-sm"><p class="text-gray-500">Loading</p></div>
         </div>
-        <script>fetch("/api/portal/backups",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const list=document.getElementById("managed-backup-list");list.textContent="";if(!data.backups.length){{const empty=document.createElement("p");empty.className="text-gray-500";empty.textContent="No completed managed backups stored.";list.appendChild(empty);return;}}data.backups.forEach(item=>{{const row=document.createElement("div");row.className="info-row rounded-xl border border-white/10 bg-white/[0.03] p-3";const details=document.createElement("div");const name=document.createElement("p");name.className="font-medium text-white";name.textContent=item.filename;const meta=document.createElement("p");meta.className="mt-1 text-xs text-gray-500";meta.textContent=new Date(item.completed_at).toLocaleString()+" · "+Math.round(item.size_bytes/1048576)+" MB";details.append(name,meta);const link=document.createElement("a");link.className="compact-action";link.href=item.download_url;link.textContent="Download";row.append(details,link);list.appendChild(row);}});}}).catch(()=>{{document.getElementById("managed-backup-list").textContent="Backups unavailable";}})</script>
+        <script>fetch("/api/portal/backups",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const list=document.getElementById("managed-backup-list");list.textContent="";if(!data.backups.length){{const empty=document.createElement("p");empty.className="text-gray-500";empty.textContent="No completed managed backups stored.";list.appendChild(empty);return;}}data.backups.forEach((item,index)=>{{const row=document.createElement("div");row.className="info-row rounded-xl border border-white/10 bg-white/[0.03] p-3";if(index>2)row.hidden=true;const details=document.createElement("div");const name=document.createElement("p");name.className="font-medium text-white";name.textContent=index===0?"Latest successful managed backup":item.filename;const meta=document.createElement("p");meta.className="mt-1 text-xs text-gray-500";meta.textContent=backupDate(item.completed_at)+" · "+(item.size_bytes/1048576).toFixed(1)+" MB";details.append(name,meta);const link=document.createElement("a");link.className="compact-action";link.href=item.download_url;link.textContent="Download";row.append(details,link);list.appendChild(row);}});if(data.backups.length>3){{const show=document.createElement("button");show.className="text-purple-300";show.textContent="Show all backups";show.onclick=()=>{{Array.from(list.children).forEach(row=>row.hidden=false);show.remove();}};list.appendChild(show);}}}}).catch(()=>{{document.getElementById("managed-backup-list").textContent="Backups unavailable";}})</script>
 
         <!-- System Resources + Backup Status -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -244,18 +244,16 @@ PORTAL_HTML = """<!DOCTYPE html>
             <!-- Backup Status -->
             <div class="card portal-card p-5 sm:p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white">Local HA Backup Status</h2>
+                    <h2 class="text-lg font-semibold text-white">Native Home Assistant Backup Status</h2>
                     <span class="text-xs px-3 py-1 rounded-full {backup_badge_class}">{backup_badge_text}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <p class="text-sm text-gray-500">Last Local Backup</p>
-                        <p class="text-white font-medium mt-1">{last_backup_str}</p>
-                    </div>
-                    <div>
-                        <p class="text-sm text-gray-500">Next Local Backup</p>
-                        <p class="text-white font-medium mt-1">{next_backup_str}</p>
-                    </div>
+                    <div><p class="text-sm text-gray-500">Native automatic backups</p><p class="text-white font-medium mt-1">{native_automatic_status}</p></div>
+                    <div><p class="text-sm text-gray-500">Last native automatic backup</p><p class="text-white font-medium mt-1">{last_native_automatic}</p></div>
+                    <div><p class="text-sm text-gray-500">Next native automatic backup</p><p class="text-white font-medium mt-1">{next_backup_str}</p></div>
+                    <div><p class="text-sm text-gray-500">Local backups detected</p><p class="text-white font-medium mt-1">{local_backup_count}</p></div>
+                    <div><p class="text-sm text-gray-500">Last local backup detected</p><p class="text-white font-medium mt-1">{last_backup_str}</p></div>
+                    <div><p class="text-sm text-gray-500">Backup encryption</p><p class="text-white font-medium mt-1">{backup_encryption_status}</p></div>
                 </div>
             </div>
         </div>
@@ -996,7 +994,9 @@ async def portal_backups(request: Request):
             .order_by(desc(Backup.started_at))
             .limit(20)
         )
-        backups = bresults.scalars().all()
+        candidates = bresults.scalars().all()
+        client = (await db.execute(select(Client).where(Client.id == user.client_id))).scalars().first()
+        backups = [b for b in candidates if client and await is_customer_backup_available(b, client)]
         return {
             "backups": [{
                 "id": b.id,
@@ -1036,7 +1036,8 @@ async def portal_backup_download(backup_id: int, request: Request):
         client = (await db.execute(select(Client).where(Client.id == user.client_id))).scalars().first()
         if not client:
             raise HTTPException(status_code=404, detail="Backup not found")
-        return await build_backup_file_response(backup, client)
+        instance = (await db.execute(select(HomeAssistantInstance).where(HomeAssistantInstance.client_id == client.id))).scalars().first()
+        return await build_backup_file_response(backup, client, meaningful_backup_filename(backup, client, instance.name if instance else client.name))
 
 
 @router.get("/api/portal/report")
@@ -1460,9 +1461,13 @@ async def client_portal(request: Request):
 
         # Backup status (from agent heartbeat)
         backup_enabled = False
-        last_backup_str = "Not configured"
-        next_backup_str = "N/A"
+        last_backup_str = "Unavailable"
+        next_backup_str = "Unknown"
         backup_size_str = ""
+        native_automatic_status = "Unknown"
+        last_native_automatic = "Unknown"
+        local_backup_count = "Unavailable"
+        backup_encryption_status = "Unknown"
         # Check agent heartbeat for real-time backup status
         from routers.agent import agent_reports
         client_reports = {k: v for k, v in agent_reports.items() if v.get("client_id") == client.id}
@@ -1470,6 +1475,14 @@ async def client_portal(request: Request):
             report = list(client_reports.values())[0]
             # Addon sends backup data in 'backup' key (or 'backup_status' for backward compat)
             bs = report.get("backup", {}) or report.get("backup_status", {})
+            if bs:
+                native_flag = bs.get("native_automatic_enabled")
+                native_automatic_status = "Enabled" if native_flag is True else "Disabled" if native_flag is False else "Unknown"
+                last_native_automatic = bs.get("last_native_automatic_backup") or "Unknown"
+                next_backup_str = bs.get("next_native_automatic_backup") or "Unknown"
+                local_backup_count = str(bs.get("file_count")) if bs.get("file_count") is not None else "Unavailable"
+                encryption_flag = bs.get("encryption_enabled")
+                backup_encryption_status = "Enabled — key managed by customer in Home Assistant" if encryption_flag is True else "Disabled" if encryption_flag is False else "Unknown"
             if bs and bs.get("enabled"):
                 backup_enabled = True
                 last_backup_raw = bs.get("last_backup") or bs.get("last_backup_timestamp")
@@ -1575,8 +1588,12 @@ async def client_portal(request: Request):
             disk_used_gb=(instance.disk_used_gb if instance else 0),
             disk_total_gb=(instance.disk_total_gb if instance else 0),
             backup_badge_class="bg-green-900 text-green-300" if backup_enabled else "bg-gray-700 text-gray-400",
-            backup_badge_text="Local backup detected" if backup_enabled else "No local backup detected",
+            backup_badge_text="Local backups detected" if backup_enabled else "Native schedule unknown",
             last_backup_str=last_backup_str,
             next_backup_str=next_backup_str,
+            native_automatic_status=native_automatic_status,
+            last_native_automatic=last_native_automatic,
+            local_backup_count=local_backup_count,
+            backup_encryption_status=backup_encryption_status,
 
         )
