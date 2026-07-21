@@ -1,129 +1,28 @@
-import { useState, useEffect, useCallback } from "react";
-import { Button, Card, EmptyState, ErrorState, LiveStatus, LoadingState, PageHeader, StatusBadge } from '../components/ui';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, Card, EmptyState, ErrorState, LiveStatus, LoadingState, PageHeader, StatusBadge } from "../components/ui";
+const size=bytes=>!bytes?"Unknown":bytes>=1073741824?`${(bytes/1073741824).toFixed(1)} GB`:`${(bytes/1048576).toFixed(1)} MB`;
+const date=value=>value?new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short",timeZone:"Africa/Johannesburg"}).format(new Date(value)):"Unknown";
 
-export default function Backups() {
-  const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [managedState, setManagedState] = useState([]);
-  const [managedBackups, setManagedBackups] = useState([]);
-
-  const fetchBackups = useCallback(async () => {
-    try {
-      const [res, stateRes] = await Promise.all([
-        fetch("/api/admin/backups", { credentials: "include" }),
-        fetch("/api/admin/managed-backup-state", { credentials: "include" }),
-      ]);
-      if (res.ok) {
-        const data = await res.json();
-        setBackups(data.backups || []);
-      }
-      if (stateRes.ok) { const data = await stateRes.json(); setManagedState(data.clients || []); setManagedBackups(data.backups || []); }
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchBackups();
-    const id = setInterval(fetchBackups, 30000);
-    return () => clearInterval(id);
-  }, [fetchBackups]);
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} />;
-
-  const formatSize = (bytes) => {
-    if (!bytes) return "Unknown";
-    if (bytes > 1073741824) return (bytes / 1073741824).toFixed(1) + " GB";
-    return (bytes / 1048576).toFixed(0) + " MB";
-  };
-
-  const formatDate = (d) => {
-    if (!d) return "-";
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Johannesburg" }).format(new Date(d));
-  };
-
-  return (
-    <div>
-      <PageHeader title="Server Backups" meta={<LiveStatus lastUpdated={lastUpdated} />} />
-
-      <h2 className="text-white font-semibold mb-3">Managed Home Assistant Backups</h2>
-      <div className="space-y-3 mb-8">
-        {managedState.map((item) => { const op=item.current_operation; return (
-          <Card key={item.client_id} compact><div className="flex flex-wrap justify-between gap-4"><div><div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><StatusBadge status={op?.state || "unknown"}>{op?.state || "No operation"}</StatusBadge></div><div className="text-sm text-gray-500 mt-2">Managed scheduling: {item.automatic_enabled ? "Enabled" : "Not enabled"} · Last managed backup: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last managed failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div></div></div></Card>
-        ); })}
-        {managedState.length === 0 && <EmptyState>No managed backup state reported.</EmptyState>}
-      </div>
-
-      <h2 className="text-white font-semibold mb-3">Stored Managed Backups</h2>
-      <div className="space-y-3 mb-8">
-        {managedBackups.map((backup) => (
-          <Card key={backup.download_url} compact>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-semibold text-white">{backup.client_name} <span className="text-purple-300">· {backup.instance_name}</span></span>
-                  <StatusBadge status={backup.status}>{backup.status}</StatusBadge>
-                </div>
-                <div className="mt-1 text-sm text-gray-500">
-                  {backup.backup_type} · {formatSize(backup.size_bytes)} · {formatDate(backup.completed_at)} <span className="ml-2 text-gray-600">{backup.filename}</span>
-                </div>
-              </div>
-              <Button as="a" href={backup.download_url} download variant="primary">Download</Button>
-            </div>
-          </Card>
-        ))}
-        {managedBackups.length === 0 && <EmptyState>No completed managed backups stored.</EmptyState>}
-      </div>
-
-      {backups.length === 0 ? (
-        <EmptyState>No server backups recorded.</EmptyState>
-      ) : (
-        <div className="space-y-4">
-          {backups.map((b, i) => (
-            <Card key={i} compact>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-white font-semibold">{b.name || b.filename}</span>
-                    <StatusBadge status={b.status || "available"}>{b.status || "available"}</StatusBadge>
-                  </div>
-                  <div className="text-sm text-gray-500 mt-1">
-                    {b.type && <span className="mr-3">{b.type}</span>}
-                    {b.size_bytes && <span className="mr-3">{formatSize(b.size_bytes)}</span>}
-                    {b.created_at && <span>{formatDate(b.created_at)}</span>}
-                    {b.date && <span>{b.date}</span>}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {b.download_url && (
-                    <Button as="a" href={b.download_url} download variant="primary">
-                      Download
-                    </Button>
-                  )}
-                  {b.client_name && (
-                    <span className="text-xs text-gray-500 self-center">{b.client_name}</span>
-                  )}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <Card muted className="mt-8">
-        <h2 className="text-white font-semibold mb-2">Current Backup Scope</h2>
-        <p className="text-gray-400 text-sm">
-          Server backups include PostgreSQL database, environment configs, Docker setup,
-          platform source code, and Cloudflare tunnel configs. Managed Home Assistant backup state and completed uploads are shown above. Recurring scheduling, retention,
-          and restore are not active.
-        </p>
-      </Card>
-    </div>
-  );
+export default function Backups(){
+ const [server,setServer]=useState([]),[states,setStates]=useState([]),[managed,setManaged]=useState([]),[expanded,setExpanded]=useState({}),[loading,setLoading]=useState(true),[error,setError]=useState(null),[lastUpdated,setLastUpdated]=useState(null);
+ const load=useCallback(async()=>{try{const [a,b]=await Promise.all([fetch("/api/admin/backups",{credentials:"include"}),fetch("/api/admin/managed-backup-state",{credentials:"include"})]);if(!a.ok||!b.ok)throw new Error("Unable to load backups");const ad=await a.json(),bd=await b.json();setServer(ad.backups||[]);setStates(bd.clients||[]);setManaged(bd.backups||[]);setLastUpdated(new Date())}catch(err){setError(err.message)}finally{setLoading(false)}},[]);
+ useEffect(()=>{load();const id=setInterval(load,30000);return()=>clearInterval(id)},[load]);
+ const groups=useMemo(()=>{const result={};for(const backup of managed){const key=`${backup.client_name}::${backup.instance_name}`;if(!result[key])result[key]={client:backup.client_name,instance:backup.instance_name,items:[]};result[key].items.push(backup)}return Object.entries(result)},[managed]);
+ if(loading)return <LoadingState/>;if(error)return <ErrorState error={error}/>;
+ return <div><PageHeader title="Backups" subtitle="Home Assistant customer archives and platform server backups are kept separate." meta={<LiveStatus lastUpdated={lastUpdated}/>}/>
+  <section aria-labelledby="ha-backups"><h2 id="ha-backups" className="mb-3 text-lg font-semibold text-white">Home Assistant Backups</h2>
+   <div className="space-y-3">{groups.length===0?<EmptyState>No completed managed backups stored.</EmptyState>:groups.map(([key,group])=>{const state=states.find(x=>x.client_name===group.client);const total=group.items.reduce((sum,item)=>sum+(item.size_bytes||0),0);const open=!!expanded[key];return <Card key={key} compact>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-white">{group.client}</p><p className="text-purple-300">{group.instance}</p>
+     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm"><span className="text-gray-500">Last successful backup</span><span className="text-white">{date(group.items[0]?.completed_at)}</span><span className="text-gray-500">Stored backups</span><span className="text-white">{group.items.length}</span><span className="text-gray-500">Storage used</span><span className="text-white">{size(total)}</span><span className="text-gray-500">Status</span><StatusBadge status={state?.current_operation?.state||"completed"}>{state?.current_operation?.state||"Protected"}</StatusBadge></div></div>
+     <Button variant="secondary" onClick={()=>setExpanded({...expanded,[key]:!open})}>{open?"Hide backups":"View backups"}</Button></div>
+    {open&&<div className="mt-5 space-y-2 border-t border-white/10 pt-4">{group.items.map((backup,index)=><div key={backup.download_url} className="flex flex-col gap-3 rounded-lg bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words font-medium text-white">{group.instance} — {date(backup.completed_at)}</p><p className="mt-1 text-sm text-gray-500">Successful · {size(backup.size_bytes)} · {backup.backup_type}</p></div><Button as="a" href={backup.download_url} download>Download</Button></div>)}</div>}
+   </Card>})}</div>
+  </section>
+  <section aria-labelledby="server-backups" className="mt-8"><h2 id="server-backups" className="mb-3 text-lg font-semibold text-white">Platform Server Backups</h2>
+   <div className="space-y-3">{server.length===0?<EmptyState>No platform server backups recorded.</EmptyState>:server.map((backup,index)=><Card key={backup.download_url||index} compact>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words font-semibold text-white">{backup.name||backup.type||"Platform backup"}</p><p className="mt-1 text-sm text-gray-500">{backup.type||"Platform server backup"} · {size(backup.size_bytes)} · {date(backup.created_at||backup.date)}</p></div><div className="flex items-center gap-3"><StatusBadge status={backup.status||"available"}>{backup.status||"Available"}</StatusBadge>{backup.download_url&&<Button as="a" href={backup.download_url} download>Download</Button>}</div></div>
+   </Card>)}</div>
+  </section>
+  <Card muted className="mt-8"><p className="text-sm text-gray-400">Deletion, restore, retention, and automatic managed scheduling are not available in RC1.2.</p></Card>
+ </div>;
 }

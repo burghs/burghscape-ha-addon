@@ -104,22 +104,25 @@ export default function Settings() {
         {loading ? (
           <div className="text-gray-400">Checking...</div>
         ) : health ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <StatusDot active={health.status === 'healthy'} size="md" />
-              <span className="text-white">Backend: {health.status}</span>
-            </div>
-          </div>
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            {[
+              ['Backend', health.status === 'healthy' ? 'Healthy' : 'Unavailable', health.status === 'healthy'],
+              ['Database', health.database === 'connected' ? 'Connected' : 'Unavailable', health.database === 'connected'],
+              ['Storage backend', health.storage === 'available' ? 'Available' : 'Unavailable', health.storage === 'available'],
+              ['Email service', health.email === 'configured' ? 'Configured' : 'Not configured', health.email === 'configured'],
+            ].map(([label, value, active]) => (
+              <div key={label} className="flex items-center justify-between rounded-lg border border-white/10 p-3">
+                <dt className="text-gray-400">{label}</dt><dd className="flex items-center gap-2 text-white"><StatusDot active={active} />{value}</dd>
+              </div>
+            ))}
+            <div className="rounded-lg border border-white/10 p-3"><dt className="text-gray-400">Platform version</dt><dd className="mt-1 text-white">{health.version || 'Unavailable'}</dd></div>
+          </dl>
         ) : (
           <div className="text-danger-text">Unable to connect to backend</div>
         )}
         {error && <div className="text-danger-text text-sm mt-2">Error: {error}</div>}
       </Card>
 
-      <Card compact>
-        <h2 className="text-lg font-semibold text-white mb-2">Platform Settings</h2>
-        <p className="text-gray-400 text-sm">Cloudflare and OneDrive credentials are configured via the .env file on the server.</p>
-      </Card>
     </div>
   );
 }

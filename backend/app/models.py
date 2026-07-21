@@ -101,6 +101,7 @@ class SupportTicket(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     title = Column(String(255), nullable=False)
     description = Column(Text)
+    resolution = Column(Text, nullable=True)
     hours_used = Column(Float, default=0.0)
     status = Column(String(50), default="open")
     priority = Column(String(20), default="normal")

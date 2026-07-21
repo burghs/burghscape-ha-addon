@@ -1233,7 +1233,11 @@ async def client_portal(request: Request):
                 "low": "bg-gray-700 text-gray-400",
             }
             created = t.created_at.strftime('%Y-%m-%d') if t.created_at else 'Unknown'
-            tickets_html += f'<div class="bg-gray-900 rounded-lg p-3"><div class="flex items-center justify-between"><span class="font-medium text-sm">{t.title}</span><div class="flex gap-2"><span class="text-xs px-2 py-0.5 rounded-full {priority_colors.get(t.priority, "bg-gray-700 text-gray-400")}">{t.priority}</span><span class="text-xs px-2 py-0.5 rounded-full {status_colors.get(t.status, "bg-gray-700 text-gray-400")}">{t.status}</span></div></div><p class="text-xs text-gray-400 mt-1">{t.hours_used}h used • {created}</p></div>'
+            safe_title = escape(t.title or "Untitled ticket")
+            safe_priority = escape(t.priority or "normal")
+            safe_status = escape(t.status or "open")
+            resolution_html = f'<div class="mt-2 border-t border-white/10 pt-2"><span class="text-xs text-gray-500">Resolution</span><p class="mt-1 whitespace-pre-wrap text-sm text-gray-300">{escape(t.resolution)}</p></div>' if t.resolution else ""
+            tickets_html += f'<div class="bg-gray-900 rounded-lg p-3"><div class="flex items-center justify-between"><span class="font-medium text-sm">{safe_title}</span><div class="flex gap-2"><span class="text-xs px-2 py-0.5 rounded-full {priority_colors.get(t.priority, "bg-gray-700 text-gray-400")}">{safe_priority}</span><span class="text-xs px-2 py-0.5 rounded-full {status_colors.get(t.status, "bg-gray-700 text-gray-400")}">{safe_status}</span></div></div><p class="text-xs text-gray-400 mt-1">{t.hours_used}h used • {created}</p>{resolution_html}</div>'
 
         if not tickets:
             tickets_html = '<p class="text-gray-500 text-sm">No tickets yet.</p>'

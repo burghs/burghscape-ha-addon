@@ -219,11 +219,24 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health_check():
+    database_status = "unavailable"
+    try:
+        async with async_session() as db:
+            await db.execute(select(1))
+        database_status = "connected"
+    except Exception:
+        pass
+    storage_available = bool(settings.BACKUP_LOCAL_PATH and os.path.isdir(settings.BACKUP_LOCAL_PATH) and os.access(settings.BACKUP_LOCAL_PATH, os.R_OK | os.W_OK))
+    email_configured = bool(os.environ.get("SMTP_HOST"))
     return {
         "status": "healthy",
         "service": settings.APP_NAME,
         "version": settings.APP_VERSION,
+        "database": database_status,
+        "storage": "available" if storage_available else "unavailable",
+        "email": "configured" if email_configured else "not_configured",
     }
 
 

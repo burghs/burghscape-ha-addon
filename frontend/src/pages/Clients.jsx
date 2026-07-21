@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ActionLink, DataTable, Modal, ProgressBar, StatCard, StatusBadge, StatusDot } from '../components/ui';
 
 const TIERS = {
-  basic: { label: 'Basic', price: 'R199', tone: 'muted', hours: 2 },
+  basic: { label: 'Basic', price: 'R199', tone: 'muted', hours: 0 },
   standard: { label: 'Standard', price: 'R499', tone: 'primary', hours: 2 },
   premium: { label: 'Premium', price: 'R899', tone: 'info', hours: 5 },
 };
@@ -33,6 +33,12 @@ export default function Clients() {
   const [portalUserMsg, setPortalUserMsg] = useState(null);
   const [welcomeEmailSending, setWelcomeEmailSending] = useState(false);
   const [welcomeEmailStatus, setWelcomeEmailStatus] = useState(null);
+  const [supportSummaries, setSupportSummaries] = useState({});
+  const [tokenClient, setTokenClient] = useState(null);
+  const [tokenValue, setTokenValue] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [tokenMsg, setTokenMsg] = useState('');
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -41,6 +47,8 @@ export default function Clients() {
         const data = await res.json();
         setClients(data);
         setLastUpdated(new Date().toLocaleTimeString());
+        const summaryRes = await fetch('/api/support/hours-summary', { credentials: 'include' });
+        if (summaryRes.ok) setSupportSummaries((await summaryRes.json()).clients || {});
       }
     } catch (err) {
       console.error('Failed to fetch clients:', err);
@@ -236,34 +244,24 @@ export default function Clients() {
     setShowEditForm(true);
   };
 
-  const deleteClient = async (clientId, name) => {
-    if (!confirm(`Are you sure you want to delete client "${name}"?`)) return;
+  const deleteClient = (client) => setDeleteCandidate(client);
+
+  const regenerateToken = async (client) => {
+    setTokenClient(client); setShowToken(false); setTokenMsg(''); setTokenValue('');
     try {
-      const res = await fetch(`/api/clients/${clientId}`, { method: 'DELETE',
-        credentials: 'include' });
-      if (res.ok) {
-        fetchClients();
-    fetchPortalUsers();
-        if (selectedClient && selectedClient.id === clientId) {
-          setSelectedClient(null);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to delete client:', err);
-    }
+      const res = await fetch(`/api/clients/${client.id}/tokens`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Unable to load token');
+      const tokens = await res.json();
+      setTokenValue(tokens.find(token => token.is_active)?.token || '');
+    } catch (err) { setTokenMsg(err.message); }
   };
 
-  const regenerateToken = async (clientId) => {
-    try {
-      const res = await fetch(`/api/clients/${clientId}/tokens`, { method: 'POST',
-        credentials: 'include' });
-      if (res.ok) {
-        fetchClients();
-    fetchPortalUsers();
-      }
-    } catch (err) {
-      console.error('Failed to regenerate token:', err);
-    }
+  const rotateToken = async () => {
+    if (!tokenClient || !confirm('Regenerate this token? The existing Agent token will stop working immediately.')) return;
+    setTokenMsg('Regenerating…');
+    const res = await fetch(`/api/clients/${tokenClient.id}/tokens`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({}) });
+    if (res.ok) { const token = await res.json(); setTokenValue(token.token); setShowToken(true); setTokenMsg('Token regenerated. Update the Agent before its next report.'); fetchClients(); }
+    else setTokenMsg('Token regeneration failed.');
   };
 
   const openClientDetails = (client) => {
@@ -496,7 +494,11 @@ export default function Clients() {
         <StatCard label="Hours Remaining" value={`${totalHoursRemaining}h`} tone="warning" />
       </div>
 
-      <DataTable
+      <div className="space-y-3 md:hidden">
+        {clients.map(client => <div key={client.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-semibold text-white">{client.name}</p><p className="break-all text-sm text-gray-400">{client.email}</p></div>{getStatusBadge(client.status)}</div><div className="mt-3 flex flex-wrap gap-2">{getTierBadge(client.tier)}<span className="text-sm text-gray-400">{getInstanceDot(client.is_online)}</span></div>{supportSummaries[client.id] && <p className="mt-3 text-sm text-gray-400">Support: {supportSummaries[client.id].logged}h logged · {supportSummaries[client.id].included}h included{Number(supportSummaries[client.id].potentially_billable)>0 ? ` · ${supportSummaries[client.id].potentially_billable}h potentially billable` : ` · ${supportSummaries[client.id].remaining}h remaining`}</p>}<div className="mt-4 grid grid-cols-3 gap-2"><button className="btn btn-secondary" onClick={()=>openClientDetails(client)}>Details</button><button className="btn btn-secondary" onClick={()=>startEdit(client)}>Edit</button><button className="btn btn-secondary" onClick={()=>regenerateToken(client)}>Token</button></div><div className="mt-4 border-t border-red-400/20 pt-3"><button className="btn btn-danger w-full" onClick={()=>deleteClient(client)}>Delete client…</button></div></div>)}
+      </div>
+
+      <DataTable className="hidden md:block"
         columns={[{ label: 'Client' }, { label: 'Tier' }, { label: 'Status' }, { label: 'Instance' }, { label: 'Token' }, { label: 'Actions' }]}
         colSpan={6}
       >
@@ -510,6 +512,7 @@ export default function Clients() {
               <td className="px-4 py-4">
                 <div className="font-medium text-white">{client.name}</div>
                 <div className="text-sm text-muted-text">{client.email}</div>
+                {supportSummaries[client.id] && <div className="mt-1 text-xs text-gray-500">Support: {supportSummaries[client.id].logged}h logged · {supportSummaries[client.id].included}h included{Number(supportSummaries[client.id].potentially_billable) > 0 ? ` · ${supportSummaries[client.id].potentially_billable}h potentially billable` : ` · ${supportSummaries[client.id].remaining}h remaining`}</div>}
               </td>
               <td className="px-4 py-4">{getTierBadge(client.tier)}</td>
               <td className="px-4 py-4">{getStatusBadge(client.status)}</td>
@@ -532,8 +535,8 @@ export default function Clients() {
                 <div className="flex flex-wrap gap-3">
                   <ActionLink onClick={() => openClientDetails(client)} variant="primary">Details</ActionLink>
                   <ActionLink onClick={() => startEdit(client)} variant="info">Edit</ActionLink>
-                  <ActionLink onClick={() => regenerateToken(client.id)} variant="success">Token</ActionLink>
-                  <ActionLink onClick={() => deleteClient(client.id, client.name)} variant="danger">Delete</ActionLink>
+                  <ActionLink onClick={() => regenerateToken(client)} variant="success">Token</ActionLink>
+                  <ActionLink onClick={() => deleteClient(client)} variant="danger">Delete</ActionLink>
                 </div>
               </td>
             </tr>
@@ -575,7 +578,10 @@ export default function Clients() {
           </div>
         )}
 
-        <DataTable
+        <div className="space-y-3 md:hidden">
+          {portalUsers.map(user => <div key={user.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-white">{user.name}</p><p className="break-all text-sm text-gray-400">{user.email}</p><p className="mt-1 text-sm text-gray-500">{user.client_name || 'No client'}</p></div><StatusBadge status={user.is_active ? 'active' : 'disabled'}>{user.is_active ? 'Active' : 'Disabled'}</StatusBadge></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="btn btn-secondary" onClick={() => updatePortalUser(user.id, { is_active: !user.is_active })}>{user.is_active ? 'Disable' : 'Enable'}</button><button className="btn btn-danger" onClick={() => deletePortalUser(user.id)}>Delete user…</button></div></div>)}
+        </div>
+        <DataTable className="hidden md:block"
           columns={[{ label: 'Name' }, { label: 'Email' }, { label: 'Client' }, { label: 'Role' }, { label: 'Status' }, { label: 'Last Login' }, { label: 'Actions', align: 'right' }]}
           colSpan={7}
         >
@@ -615,6 +621,19 @@ export default function Clients() {
         </DataTable>
       </div>
 
+
+      {tokenClient && (
+        <Modal className="max-h-[85vh] overflow-y-auto p-6" maxWidth="max-w-lg">
+          <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold text-white">Subscription token</h2><p className="text-sm text-gray-400">{tokenClient.name}</p></div><button className="btn btn-secondary" onClick={()=>setTokenClient(null)}>Close</button></div>
+          <div className="mt-5 rounded-lg border border-white/10 p-3"><p className="break-all font-mono text-sm text-white">{tokenValue ? (showToken ? tokenValue : '••••••••••••••••••••••••••••••••') : 'No active token'}</p></div>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row"><button className="btn btn-secondary" onClick={()=>setShowToken(!showToken)} disabled={!tokenValue}>{showToken?'Hide token':'Show token'}</button><button className="btn btn-secondary" onClick={()=>copyToClipboard(tokenValue)} disabled={!tokenValue}>Copy token</button><button className="btn btn-danger sm:ml-auto" onClick={rotateToken}>Regenerate token</button></div>
+          <p className="mt-3 text-sm text-amber-200">Regeneration invalidates the token currently used by the Agent and always requires confirmation.</p>{tokenMsg&&<p className="mt-2 text-sm text-purple-200" role="status">{tokenMsg}</p>}
+        </Modal>
+      )}
+
+      {deleteCandidate && (
+        <Modal className="p-6" maxWidth="max-w-lg"><h2 className="text-xl font-semibold text-white">Delete {deleteCandidate.name}?</h2><p className="mt-3 text-sm text-gray-300">Client deletion is disabled because the current data relationships would also remove instances, portal users, tokens, support tickets, and backup records. Tunnel cleanup is not transactionally coordinated.</p><p className="mt-3 text-sm text-amber-200">No records have been changed.</p><div className="mt-5 flex justify-end"><button className="btn btn-secondary" onClick={()=>setDeleteCandidate(null)}>Close</button></div></Modal>
+      )}
       {showForm && (
         <Modal className="p-6" maxWidth="max-w-md">
           <h2 className="mb-4 text-xl font-semibold text-white">Add New Client</h2>

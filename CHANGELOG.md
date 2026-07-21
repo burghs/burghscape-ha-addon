@@ -1,5 +1,14 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.2 Management Portal refinement
+
+- Added responsive Management Portal client cards, portal-user cards, operational HA instance cards, grouped Home Assistant backups, separate Platform Server Backups, support ticket detail/resolution workflow, and safe Settings health summary.
+- Fixed the Token action with masked Show/Copy and separately confirmed regeneration; opening the dialog does not rotate credentials.
+- Added ticket-derived per-client included, logged, remaining, and potentially billable support visibility.
+- Added nullable `support_tickets.resolution` through `20260721_add_support_ticket_resolution.sql`; resolutions are stored separately from descriptions and escaped in the existing client ticket view.
+- Disabled client deletion completion because existing cascades and external tunnel lifecycle do not provide a safe coordinated delete workflow.
+- Preserved backup download authorization/filtering and did not add deletion, restore, retention, scheduling, billing, remote-control actions, Agent changes, or a Client Portal redesign.
+
 ## 2026-07-21 — RC1.1.1 Support hours calculation and plan behaviour
 
 - Corrected Client Portal support-hour aggregation by summing existing `SupportTicket.hours_used` values instead of displaying the unsynchronized `Client.hours_used_this_month` field.
