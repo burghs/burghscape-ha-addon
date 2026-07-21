@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button, Card, Input, PageHeader, StatusDot } from '../components/ui';
+import ThemeControl from '../components/ThemeControl';
 
 export default function Settings() {
   const [health, setHealth] = useState(null);
@@ -62,6 +63,10 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" />
       
+      <Card compact className="mb-6">
+        <ThemeControl />
+      </Card>
+
       <Card compact className="mb-6">
         <h2 className="text-lg font-semibold text-white mb-4">Change Password</h2>
         <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">

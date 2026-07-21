@@ -1,5 +1,14 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.3.1 authenticated portal themes
+
+- Added shared Dark, Light, and System modes to the authenticated Management and Client portals while preserving the existing dark visual identity and portal layouts.
+- Stored the validated preference under the shared browser key `mybeacon-theme`; missing or invalid values fall back to System.
+- Applied the resolved theme before authenticated portal rendering and track live `prefers-color-scheme` changes only while System mode is active.
+- Added accessible, responsive theme controls to Management Settings and the Client Account area.
+- Kept both login pages visually isolated and unchanged.
+- Added no backend API/schema, Agent, notification/PWA, or backup-storage changes.
+
 ## 2026-07-21 — RC1.2.1 Management Portal cleanup
 
 - Replaced the misleading page-level remaining-hours metric with aggregate ticket-derived support time logged.

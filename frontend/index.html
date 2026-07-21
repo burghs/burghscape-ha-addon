@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/static/theme.css" />
+    <script src="/static/theme.js"></script>
+    <script>
+      if (!location.hostname.startsWith("client.") && location.pathname !== "/" && !location.pathname.startsWith("/login")) {
+        document.documentElement.setAttribute("data-theme-enabled", "");
+        window.MyBeaconTheme && window.MyBeaconTheme.start();
+      }
+    </script>
     <title>Burghscape Home Cloud</title>
   </head>
   <body>

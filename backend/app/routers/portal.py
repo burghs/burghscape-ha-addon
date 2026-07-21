@@ -21,10 +21,11 @@ from routers.portal_state import portal_sessions
 
 
 PORTAL_HTML = """<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme-enabled>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="/static/theme.js"></script>
     <title>{client_name} - Burghscape Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -89,6 +90,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         @media (min-width:768px) {{ .dashboard-grid {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1.5rem; }} .metric-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
         @media (max-width:640px) {{ .backup-row {{ align-items:stretch; flex-direction:column; }} .backup-row .compact-action, .mobile-full {{ width:100%; }} .modal-panel {{ max-height:calc(100dvh - 20px); border-radius:16px; }} }}
     </style>
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body class="bg-gray-950 text-gray-200 min-h-screen bg-grid" id="app-body">
     <nav class="card border-b border-white/10 px-4 md:px-6 py-3">
@@ -109,6 +111,7 @@ PORTAL_HTML = """<!DOCTYPE html>
             <button type="button" onclick="toggleAccountPanel();toggleMobileNav(document.querySelector('[aria-controls=mobile-nav]'))" class="touch-action justify-start text-gray-300">Account</button><a href="/portal/logout" class="touch-action justify-start text-gray-300">Logout</a>
         </div>
         <div id="pw-form-nav" class="hidden max-w-7xl mx-auto mt-3 p-4 bg-gray-900/80 rounded-xl border border-purple-500/10 sm:max-w-sm sm:ml-auto">
+            <fieldset class="theme-control mb-5"><legend class="text-sm font-semibold text-white">Theme</legend><p class="text-xs text-gray-500 mt-1">System follows your device appearance.</p><div class="theme-options" role="radiogroup" aria-label="Theme"><button type="button" role="radio" data-theme-choice="system" class="theme-option" onclick="choosePortalTheme('system')">System</button><button type="button" role="radio" data-theme-choice="light" class="theme-option" onclick="choosePortalTheme('light')">Light</button><button type="button" role="radio" data-theme-choice="dark" class="theme-option" onclick="choosePortalTheme('dark')">Dark</button></div></fieldset>
             <p class="text-sm font-semibold text-white mb-3">Change password</p>
             <input type="password" id="pw-current-nav" placeholder="Current password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white">
             <input type="password" id="pw-new-nav" placeholder="New password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white">
@@ -179,6 +182,10 @@ PORTAL_HTML = """<!DOCTYPE html>
         let activePortalModal = null;
         function toggleMobileNav(button) {{ const nav=document.getElementById('mobile-nav'); const hidden=nav.classList.toggle('hidden'); if(button) button.setAttribute('aria-expanded', String(!hidden)); }}
         function toggleAccountPanel() {{ document.getElementById('pw-form-nav').classList.toggle('hidden'); }}
+        function syncThemeControls() {{ const preference=window.MyBeaconTheme.getPreference(); document.querySelectorAll('[data-theme-choice]').forEach(button=>{{ button.setAttribute('aria-checked',String(button.dataset.themeChoice===preference)); }}); }}
+        function choosePortalTheme(value) {{ window.MyBeaconTheme.setPreference(value); syncThemeControls(); }}
+        window.addEventListener('mybeacon-theme-change',syncThemeControls);
+        syncThemeControls();
         function openPortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.remove('hidden'); document.body.style.overflow='hidden'; activePortalModal=id; const panel=modal.querySelector('[tabindex]'); if(panel) panel.focus(); }}
         function closePortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.add('hidden'); document.body.style.overflow=''; if(activePortalModal===id) activePortalModal=null; }}
         function closeOnBackdrop(event,id) {{ if(event.target===event.currentTarget) closePortalModal(id); }}
@@ -447,10 +454,11 @@ LOGIN_HTML = """<!DOCTYPE html>
 """
 
 GETTING_STARTED_HTML = """<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme-enabled>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="/static/theme.js"></script>
     <title>Complete Setup - Burghscape Home Cloud</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -509,6 +517,7 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
         @media (max-width: 900px) { .stage-shell { grid-template-columns:1fr; } .stage-list { position:static; } .stage-nav { display:flex; overflow-x:auto; gap:8px; padding-bottom:6px; -webkit-overflow-scrolling:touch; } .stage-tab { min-width:170px; flex:0 0 auto; } }
         @media (max-width: 640px) { body { min-height:100dvh; } main { padding-left:max(1rem, env(safe-area-inset-left)); padding-right:max(1rem, env(safe-area-inset-right)); } .hero { border-radius:22px; } .hero h1 { font-size:2.25rem; } .stage-panel { border-radius:18px; } .stage-tab { min-width:145px; padding:9px; } .stage-number { width:24px; height:24px; } .media-card { min-height:210px; padding:18px; } .data-field .mt-2, .stage-panel .mt-5.flex { flex-wrap:wrap; } .copy-button, .btn-primary, .btn-secondary { min-height:44px; } .field-value { flex-basis:100%; font-size:12px; } }
     </style>
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body class="bg-gray-950 text-gray-200 min-h-screen bg-grid">
     <nav class="card border-b border-white/10 px-4 md:px-6 py-4">
@@ -770,10 +779,11 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
 """
 
 CHANGE_PASSWORD_HTML="""<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme-enabled>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="/static/theme.js"></script>
     <title>Change Password - Burghscape Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -798,6 +808,7 @@ CHANGE_PASSWORD_HTML="""<!DOCTYPE html>
         .btn-primary:hover {{ transform: translateY(-1px); box-shadow: 0 8px 35px rgba(139,92,246,0.5); }}
         .logo-float {{ animation: float 6s ease-in-out infinite; }}
     </style>
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-grid relative" style="background:#0a0a1a">
     <div class="glow-orb w-96 h-96 bg-purple-600" style="top:-10%;left:-5%"></div>

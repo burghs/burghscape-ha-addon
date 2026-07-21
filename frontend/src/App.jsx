@@ -26,6 +26,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (!user) {
+    window.MyBeaconTheme?.clear();
     return <Login />;
   }
 
