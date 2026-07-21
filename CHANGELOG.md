@@ -1,3 +1,8 @@
+# 0.2.54
+
+- Poll for administrator-queued managed backup operations and run them through the existing manual create, download, upload, and operation-state workflow.
+- Preserve manual-only behavior; recurring scheduling, retention, and restore remain unavailable.
+
 # 0.2.52
 
 - Report managed backup transitions to the platform and expose whether automatic backups are enabled.

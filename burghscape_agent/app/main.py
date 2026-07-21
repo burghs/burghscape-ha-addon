@@ -29,6 +29,7 @@ REQUIRED_PROXIES = {"127.0.0.1", "::1", "172.30.32.0/23"}
 onboarding_status = "starting"
 onboarding_error = None
 attempted_onboarding_keys = set()
+active_backup_operation_ids = set()
 
 
 class TaggedYamlValue:
@@ -758,6 +759,12 @@ async def main_loop():
                 if not tunnel_setup_done:
                     tunnel_setup_done = await setup_tunnel(platform)
                 report = await run_once(ha, platform)
+                command = await platform.get_backup_command()
+                operation_id = command.get("operation_id") if command.get("command") == "managed_backup" else None
+                if operation_id and operation_id not in active_backup_operation_ids:
+                    active_backup_operation_ids.add(operation_id)
+                    task = asyncio.create_task(run_manual_backup_once_background(operation_id))
+                    task.add_done_callback(lambda _task, op=operation_id: active_backup_operation_ids.discard(op))
                 if not report.get("online"):
                     logger.warning("HA appears offline, will retry...")
                 if onboarding_status == "ready" and not is_cloudflared_healthy():

@@ -75,6 +75,15 @@ class PlatformClient:
             logger.error("Failed to get backup config: HTTP %s %s", resp.status, body[:200])
             return {"error": f"HTTP {resp.status}"}
 
+    async def get_backup_command(self) -> dict:
+        """Poll for one administrator-queued managed backup command."""
+        async with self.session.get("/api/backups/command") as resp:
+            if resp.status == 200:
+                return await resp.json()
+            body = await resp.text()
+            logger.error("Backup command poll rejected: HTTP %s %s", resp.status, body[:200])
+            return {"error": f"HTTP {resp.status}"}
+
     async def upload_backup_file(
         self,
         path: str,
