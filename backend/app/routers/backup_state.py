@@ -3,16 +3,20 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Backup, BackupOperation, Client, ClientUser, HomeAssistantInstance
 from routers.agent import validate_token
-from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename
+from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename, validate_client_storage_key
 from admin_auth import get_current_admin
 from routers.portal_state import portal_sessions
+from backup_storage import filesystem_summary, platform_backup_files, safe_managed_path
+import logging
+import secrets
 
 router = APIRouter()
+logger = logging.getLogger("burghscape.backup.storage")
 ACTIVE_STATES = {"creating", "downloading", "uploading"}
 TERMINAL_STATES = {"completed", "failed"}
 STATE_ORDER = {"creating": 0, "downloading": 1, "uploading": 2, "completed": 3, "failed": 3}
@@ -110,17 +114,140 @@ async def admin_backup_state(admin: dict = Depends(get_current_admin), db: Async
         if not await is_customer_backup_available(backup, client):
             continue
         instance_name = instance_names.get(backup.client_id) or client.name
+        try:
+            actual_size = safe_managed_path(getattr(backup, "storage_key", None)).stat().st_size
+        except (OSError, ValueError):
+            actual_size = backup.size_bytes or 0
         backups.append({
+            "id": backup.id,
+            "client_id": client.id,
             "filename": backup.filename,
             "client_name": client.name,
             "instance_name": instance_name,
             "backup_type": "Burghscape managed backup",
-            "size_bytes": backup.size_bytes or 0,
+            "size_bytes": actual_size,
             "status": backup.status,
             "completed_at": _iso(backup.completed_at or backup.created_at),
             "download_url": f"/api/admin/managed-backups/{backup.id}/download",
         })
     return {"clients": [{"client_id": c.id, "client_name": c.name, **await client_backup_summary(db, c.id)} for c in clients], "backups": backups}
+
+
+async def build_storage_summary(db: AsyncSession) -> dict:
+    """Build one admin storage view from configured roots and trusted records."""
+    try:
+        capacity = filesystem_summary()
+    except (OSError, ValueError) as exc:
+        logger.warning("Backup storage summary unavailable error=%s", type(exc).__name__)
+        return {"available": False, "message": "Storage information is unavailable", "volumes": [], "managed": {"count": 0, "size_bytes": 0}, "platform": {"count": 0, "size_bytes": 0}, "groups": []}
+
+    clients = (await db.execute(select(Client))).scalars().all()
+    client_map = {client.id: client for client in clients}
+    instances = (await db.execute(select(HomeAssistantInstance))).scalars().all()
+    instance_map = {instance.client_id: instance.name for instance in instances}
+    records = (await db.execute(select(Backup).where(Backup.status == "completed"))).scalars().all()
+    grouped = {}
+    managed_count = 0
+    managed_bytes = 0
+    for backup in records:
+        client = client_map.get(backup.client_id)
+        if not client or not await is_customer_backup_available(backup, client):
+            continue
+        try:
+            actual_size = safe_managed_path(backup.storage_key).stat().st_size
+        except (OSError, ValueError):
+            continue
+        managed_count += 1
+        managed_bytes += actual_size
+        group = grouped.setdefault(backup.client_id, {
+            "client_id": backup.client_id, "client_name": client.name,
+            "instance_name": instance_map.get(backup.client_id) or client.name,
+            "count": 0, "size_bytes": 0, "oldest_at": None, "newest_at": None,
+            "latest_status": backup.status,
+        })
+        stamp = backup.completed_at or backup.created_at
+        group["count"] += 1
+        group["size_bytes"] += actual_size
+        iso = _iso(stamp)
+        if iso and (group["oldest_at"] is None or iso < group["oldest_at"]):
+            group["oldest_at"] = iso
+        if iso and (group["newest_at"] is None or iso > group["newest_at"]):
+            group["newest_at"] = iso
+            group["latest_status"] = backup.status
+
+    platform_files = platform_backup_files()
+    platform_sizes = []
+    for path in platform_files:
+        try:
+            platform_sizes.append(path.stat().st_size)
+        except OSError:
+            logger.warning("Platform backup stat failed file=%s", path.name)
+    capacity.update({
+        "managed": {"count": managed_count, "size_bytes": managed_bytes},
+        "platform": {"count": len(platform_sizes), "size_bytes": sum(platform_sizes)},
+        "groups": sorted(grouped.values(), key=lambda item: (-item["size_bytes"], item["client_name"].lower(), item["instance_name"].lower())),
+    })
+    return capacity
+
+
+@router.get("/api/admin/backup-storage")
+async def admin_backup_storage(admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    return await build_storage_summary(db)
+
+
+@router.delete("/api/admin/managed-backups/{backup_id}")
+async def admin_delete_managed_backup(backup_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    """Delete one managed archive with containment checks and rollback recovery."""
+    backup = (await db.execute(select(Backup).where(Backup.id == backup_id))).scalars().first()
+    if not backup:
+        raise HTTPException(404, "Backup not found")
+    client = (await db.execute(select(Client).where(Client.id == backup.client_id))).scalars().first()
+    if not client:
+        raise HTTPException(404, "Backup not found")
+    try:
+        key = validate_client_storage_key(client, backup.storage_key)
+        target = safe_managed_path(key)
+    except FileNotFoundError:
+        logger.warning("Managed backup deletion failed admin=%s backup_id=%s client_id=%s reason=missing", admin.get("username"), backup.id, backup.client_id)
+        raise HTTPException(409, "Stored backup archive is unavailable; no record was removed")
+    except (HTTPException, OSError, ValueError):
+        logger.warning("Managed backup deletion failed admin=%s backup_id=%s client_id=%s reason=unsafe_path", admin.get("username"), backup.id, backup.client_id)
+        raise HTTPException(400, "Stored backup path failed safety validation")
+
+    size = target.stat().st_size
+    staged = target.with_name(f".{target.name}.delete-{backup.id}-{secrets.token_hex(4)}")
+    snapshot = {column.name: getattr(backup, column.name) for column in Backup.__table__.columns}
+    operation_ids = (await db.execute(select(BackupOperation.id).where(BackupOperation.backup_id == backup.id))).scalars().all()
+    try:
+        target.rename(staged)
+        await db.execute(update(BackupOperation).where(BackupOperation.backup_id == backup.id).values(backup_id=None))
+        await db.delete(backup)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        if staged.exists() and not target.exists():
+            staged.rename(target)
+        logger.error("Managed backup deletion failed admin=%s backup_id=%s client_id=%s error=%s", admin.get("username"), backup_id, client.id, type(exc).__name__)
+        raise HTTPException(500, "Backup deletion failed; the archive and record were preserved")
+
+    try:
+        staged.unlink()
+    except OSError as exc:
+        if staged.exists() and not target.exists():
+            staged.rename(target)
+        try:
+            db.add(Backup(**snapshot))
+            if operation_ids:
+                await db.execute(update(BackupOperation).where(BackupOperation.id.in_(operation_ids)).values(backup_id=backup_id))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        logger.error("Managed backup deletion incomplete admin=%s backup_id=%s client_id=%s error=%s", admin.get("username"), backup_id, client.id, type(exc).__name__)
+        raise HTTPException(500, "Backup deletion could not be completed; no recovered space is reported")
+
+    logger.info("Managed backup deleted admin=%s backup_id=%s client_id=%s bytes=%s", admin.get("username"), backup_id, client.id, size)
+    return {"status": "deleted", "backup_id": backup_id, "recovered_bytes": size, "storage": await build_storage_summary(db)}
+
 
 @router.get("/api/admin/managed-backups/{backup_id}/download")
 async def admin_managed_backup_download(

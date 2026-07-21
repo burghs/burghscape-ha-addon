@@ -1,5 +1,14 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.3.2 backup storage monitoring and safe cleanup
+
+- Added authenticated backup-storage capacity, filesystem-used, available, percentage-used, and managed/platform file-usage monitoring using the configured backup roots.
+- Added Healthy, Attention, Warning, and Critical thresholds at 70%, 85%, and 95%, plus a compact Management Dashboard storage card.
+- Added per-client managed-backup storage totals, counts, oldest/newest dates, and usage-descending grouping.
+- Added two-step administrator-only deletion of one managed client backup with tenant-key validation, configured-root containment, traversal/symlink/directory rejection, rollback recovery, and immediate summary refresh.
+- Platform backup deletion, client-side deletion controls, automatic retention, bulk deletion, restore, notifications, PWA work, and Agent changes were not added.
+- RC1.3.2 completes feature scope for the current release; feature freeze and isolated clean-environment release validation follow.
+
 ## 2026-07-21 — RC1.3.1 authenticated portal themes
 
 - Added shared Dark, Light, and System modes to the authenticated Management and Client portals while preserving the existing dark visual identity and portal layouts.

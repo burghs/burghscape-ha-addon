@@ -166,7 +166,7 @@ from datetime import datetime
 @admin_auth_router.get("/backups")
 async def list_admin_backups(admin: dict = Depends(get_current_admin)):
     """List available server backups for download."""
-    backup_dir = "/backups"
+    backup_dir = settings.PLATFORM_BACKUP_LOCAL_PATH
     backups = []
     
     if os.path.isdir(backup_dir):
@@ -195,7 +195,7 @@ from fastapi.responses import FileResponse
 async def download_backup(filename: str, admin: dict = Depends(get_current_admin)):
     """Download a specific backup file."""
     safe_name = _os.path.basename(filename)  # Prevent path traversal
-    filepath = _os.path.join("/backups", safe_name)
+    filepath = _os.path.join(settings.PLATFORM_BACKUP_LOCAL_PATH, safe_name)
     if not _os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="Backup not found")
     return FileResponse(

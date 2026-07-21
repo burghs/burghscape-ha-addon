@@ -90,7 +90,8 @@ class RC121Tests(unittest.TestCase):
         self.assertIn("Last successful managed backup", instances)
         self.assertIn("Burghscape Platform", backups)
         self.assertIn("platformBackupSummary", backups)
-        self.assertNotIn("Delete", backups)
+        platform_section = backups.split('id="server-backups"', 1)[1].split("{deleteTarget &&", 1)[0]
+        self.assertNotIn('variant="danger"', platform_section)
         self.assertIn("groupTicketsByClient", support_page)
         self.assertIn("Permanently delete ticket", support_page)
         self.assertIn("permanently removes its recorded time", support_page)
