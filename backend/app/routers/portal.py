@@ -75,233 +75,113 @@ PORTAL_HTML = """<!DOCTYPE html>
             .copy-chip {{ flex: 1 1 auto; }}
             .portal-actions {{ grid-template-columns: 1fr; }}
         }}
+
+        .dashboard-grid {{ display:grid; grid-template-columns:1fr; gap:1rem; }}
+        .metric-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }}
+        .metric-tile {{ border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.035); border-radius:12px; padding:12px; min-width:0; }}
+        .touch-action {{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; }}
+        .focusable:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {{ outline:2px solid #a78bfa; outline-offset:2px; }}
+        .portal-modal {{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.78); }}
+        .portal-modal.hidden {{ display:none; }}
+        .modal-panel {{ width:min(100%,760px); max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px; }}
+        .backup-row {{ display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid rgba(255,255,255,.08); padding:14px 0; }}
+        @media (min-width:768px) {{ .dashboard-grid {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1.5rem; }} .metric-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
+        @media (max-width:640px) {{ .backup-row {{ align-items:stretch; flex-direction:column; }} .backup-row .compact-action, .mobile-full {{ width:100%; }} .modal-panel {{ max-height:calc(100dvh - 20px); border-radius:16px; }} }}
     </style>
 </head>
 <body class="bg-gray-950 text-gray-200 min-h-screen bg-grid" id="app-body">
-    <!-- Top Nav -->
-    <nav class="card border-b border-white/10 px-4 md:px-6 py-4">
-        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <nav class="card border-b border-white/10 px-4 md:px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
                 <img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="brand-logo">
-                <div class="min-w-0 leading-tight">
-                    <div class="text-sm font-semibold text-white">Burghscape</div>
-                    <div class="truncate text-xs uppercase tracking-[0.16em] text-purple-300">Client Portal</div>
-                </div>
-                <span class="hidden lg:inline text-sm font-medium text-gray-400 truncate">{client_name}</span>
-                <span class="text-xs px-2 py-1 rounded-full {status_class}">{status_text}</span>
+                <div class="min-w-0 leading-tight"><div class="text-sm font-semibold text-white">Burghscape</div><div class="truncate text-xs uppercase tracking-[0.16em] text-purple-300">Client Portal</div></div>
+                <span class="hidden lg:inline text-sm text-gray-400 truncate">{client_name}</span>
             </div>
-            <div class="flex shrink-0 items-center gap-2 md:gap-4 text-sm">
-                <span class="text-gray-400 hidden sm:inline">{user_name}</span>
-                <a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
-                <button onclick="document.getElementById('pw-form-nav').classList.toggle('hidden')" class="text-gray-400 hover:text-purple-400 transition nav-link text-xs md:text-sm">Account</button>
-                <a href="/portal/logout" class="text-gray-400 hover:text-purple-400 transition nav-link text-xs md:text-sm">Logout</a>
+            <div class="hidden sm:flex shrink-0 items-center gap-4 text-sm">
+                <span class="text-gray-400">{user_name}</span><a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
+                <button type="button" onclick="toggleAccountPanel()" class="nav-link text-gray-400 hover:text-purple-300">Account</button><a href="/portal/logout" class="nav-link text-gray-400 hover:text-purple-300">Logout</a>
             </div>
+            <button type="button" class="sm:hidden touch-action border border-white/10 text-white" aria-controls="mobile-nav" aria-expanded="false" onclick="toggleMobileNav(this)">Menu</button>
         </div>
-        <!-- Password change dropdown -->
-        <div id="pw-form-nav" class="hidden mt-3 p-4 bg-gray-900/50 rounded-xl border border-purple-500/10 max-w-sm ml-auto">
-            <p class="text-xs text-gray-400 mb-2">Change Password</p>
-            <input type="password" id="pw-current-nav" placeholder="Current Password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 mb-2 text-sm text-white focus:border-purple-500 focus:outline-none">
-            <input type="password" id="pw-new-nav" placeholder="New Password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 mb-2 text-sm text-white focus:border-purple-500 focus:outline-none">
-            <input type="password" id="pw-confirm-nav" placeholder="Confirm Password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm text-white focus:border-purple-500 focus:outline-none">
-            <button onclick="changePasswordNav()" class="bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600 px-4 py-2 rounded-lg text-sm text-white w-full">Update Password</button>
-            <p id="pw-msg-nav" class="text-sm mt-2 hidden"></p>
+        <div id="mobile-nav" class="hidden sm:hidden max-w-7xl mx-auto mt-3 grid gap-2 border-t border-white/10 pt-3 text-sm">
+            <span class="text-gray-400 px-2">{user_name}</span><a href="/portal/getting-started" class="touch-action justify-start text-purple-300">{setup_nav_label}</a>
+            <button type="button" onclick="toggleAccountPanel();toggleMobileNav(document.querySelector('[aria-controls=mobile-nav]'))" class="touch-action justify-start text-gray-300">Account</button><a href="/portal/logout" class="touch-action justify-start text-gray-300">Logout</a>
+        </div>
+        <div id="pw-form-nav" class="hidden max-w-7xl mx-auto mt-3 p-4 bg-gray-900/80 rounded-xl border border-purple-500/10 sm:max-w-sm sm:ml-auto">
+            <p class="text-sm font-semibold text-white mb-3">Change password</p>
+            <input type="password" id="pw-current-nav" placeholder="Current password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white">
+            <input type="password" id="pw-new-nav" placeholder="New password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white">
+            <input type="password" id="pw-confirm-nav" placeholder="Confirm password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-3 text-white">
+            <button type="button" onclick="changePasswordNav()" class="compact-action w-full">Update password</button><p id="pw-msg-nav" class="text-sm mt-2 hidden"></p>
         </div>
     </nav>
 
-    <div class="max-w-7xl mx-auto p-4 sm:p-6 mt-4">
+    <main class="max-w-7xl mx-auto px-4 py-5 sm:px-6 sm:py-7">
         {onboarding_banner_html}
-        <!-- System Status -->
-        <div class="card portal-card p-5 sm:p-6 mb-6">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-5">
-                <div class="flex items-center gap-3">
-                    <h2 class="text-lg font-semibold text-white">System Status</h2>
-                    <div class="flex items-center gap-2">
-                        <span class="status-dot {online_dot_class}"></span>
-                        <span class="text-sm {online_text_class}">{online_status}</span>
-                    </div>
+        <section class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="instance-heading">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0"><div class="flex flex-wrap items-center gap-3"><h1 id="instance-heading" class="text-xl sm:text-2xl font-bold text-white truncate">{instance_name}</h1><span class="inline-flex items-center gap-2 text-sm {online_text_class}"><span class="status-dot {online_dot_class}"></span>{online_status}</span></div>
+                    <div class="mt-4 grid grid-cols-3 gap-3 text-center sm:text-left"><div><strong class="block text-xl text-white">{entity_count}</strong><span class="text-xs text-gray-500">Entities</span></div><div><strong class="block text-xl text-white">{addon_count_display}</strong><span class="text-xs text-gray-500">Add-ons{addon_count_suffix}</span></div><div><strong class="block text-xl text-white">{integration_count}</strong><span class="text-xs text-gray-500">Integrations</span></div></div>
                 </div>
-                <a href="/api/portal/report" target="_blank" class="compact-action">Download System Report</a>
+                <button type="button" onclick="openPortalModal('setup-modal')" class="compact-action mobile-full">Setup Details</button>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-                <div>
-                    <p class="text-2xl sm:text-3xl font-bold text-white">{entity_count}</p>
-                    <p class="text-xs text-gray-500 mt-1">Entities</p>
-                </div>
-                <div>
-                    <p class="text-2xl sm:text-3xl font-bold text-white">{addon_count_display}</p>
-                    <p class="text-xs text-gray-500 mt-1">Add-ons{addon_count_suffix}</p>
-                </div>
-                <div>
-                    <p class="text-2xl sm:text-3xl font-bold text-white">{integration_count}</p>
-                    <p class="text-xs text-gray-500 mt-1">Integrations</p>
-                </div>
-            </div>
-        </div>
+        </section>
 
-        <!-- Burghscape Details -->
-        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] gap-6 mb-6 items-start">
-            <div class="card portal-card p-5 sm:p-6 min-w-0">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
-                    <div>
-                        <h2 class="text-lg font-semibold text-white">Your Burghscape Details</h2>
-                        <p class="text-sm text-gray-500 mt-1">The single source for your Burghscape setup values and access links.</p>
-                    </div>
-                    <span id="details-feedback" class="action-feedback"></span>
-                </div>
-                <div class="detail-grid">
-                    <div class="detail-item"><div class="detail-label">Burghscape Add-on Repository URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{addon_repository_url}</span><button class="copy-chip" onclick="copyPortalValue('{addon_repository_url}', 'Repository URL copied', 'details-feedback')">Copy</button></div></div>
-                    <div class="detail-item"><div class="detail-label">Subscription Token</div><div class="mt-2 flex items-center gap-2"><span id="subscription-token-value" class="detail-value flex-1" data-masked="{subscription_token_masked}" data-secret="{subscription_token_secret}" data-visible="false">{subscription_token_masked}</span><button class="copy-chip" {subscription_token_disabled} onclick="toggleSecret('subscription-token-value', this, 'details-feedback')">Show</button><button class="copy-chip" {subscription_token_disabled} onclick="copySecretValue('subscription-token-value', 'Subscription token copied', 'details-feedback')">Copy</button></div></div>
-                    <div class="detail-item"><div class="detail-label">Home Assistant Remote URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{remote_url}</span><button class="copy-chip" onclick="copyPortalValue('{remote_url}', 'Remote URL copied', 'details-feedback')">Copy</button><a href="{remote_url}" target="_blank" rel="noopener" class="copy-chip">Open</a></div></div>
-                    <div class="detail-item"><div class="detail-label">Client Portal URL</div><div class="mt-2 flex items-center gap-2"><span class="detail-value flex-1">{client_portal_url}</span><button class="copy-chip" onclick="copyPortalValue('{client_portal_url}', 'Client Portal URL copied', 'details-feedback')">Copy</button></div></div>
-                    <div class="detail-item"><div class="detail-label">Instance Name</div><div class="detail-value">{instance_name}</div></div>
-                    <div class="detail-item"><div class="detail-label">Connection Status</div><div class="detail-value {online_text_class}">{online_status}</div></div>
-                </div>
-            </div>
-            <div class="card portal-card p-5 sm:p-6 self-start min-w-0">
-                <h2 class="text-lg font-semibold text-white">Setup and Support</h2>
-                <p class="mt-1 text-sm text-gray-500">Continue onboarding or contact Burghscape for help.</p>
-                <div class="portal-actions">
-                    <a href="/portal/getting-started" class="portal-action"><span class="block text-sm font-semibold text-white">Getting Started</span><span class="portal-action-text mt-1 block text-xs text-gray-400">Open the guided setup.</span></a>
-                    <a href="mailto:support@mybeacon.co.za" class="portal-action"><span class="block text-sm font-semibold text-white">Contact Support</span><span class="portal-action-text mt-1 block text-xs text-gray-400">Email support@mybeacon.co.za</span></a>
-                </div>
-            </div>
-        </div>
-
-        <!-- HA Environment Info -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 items-start">
-            <div class="card portal-card p-5 sm:p-6 min-w-0">
-                <h2 class="text-lg font-semibold text-white mb-4">Environment</h2>
-                <div class="space-y-3">
-                    <div class="info-row text-sm">
-                        <span class="text-gray-500">Database Size</span>
-                        <span class="text-white font-medium">{db_size}</span>
-                    </div>
-                    <div class="info-row text-sm">
-                        <span class="text-gray-500">Uptime</span>
-                        <span class="text-white font-medium">{uptime}</span>
-                    </div>
-                    <div class="info-row text-sm">
-                        <span class="text-gray-500">Updates Available</span>
-                        <span class="font-medium {updates_class}">{updates_count}</span>
-                    </div>
-                    <div class="info-row text-sm">
-                        <span class="text-gray-500">Last Seen</span>
-                        <span class="text-white font-medium">{last_seen}</span>
-                    </div>
-                </div>
-            </div>
-            {ha_news_section}
-        </div>
-
-        <!-- Managed Backup Status -->
-        <div class="card portal-card p-5 sm:p-6 mb-6">
-          <div class="info-row mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backups</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Managed scheduling</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last managed backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last managed failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
-        </div>
-        <script>const backupDate=v=>new Intl.DateTimeFormat(undefined,{{dateStyle:"medium",timeStyle:"short",timeZone:"Africa/Johannesburg"}}).format(new Date(v));fetch("/api/portal/managed-backup-state",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Not enabled";document.getElementById("managed-backup-success").textContent=data.last_success?backupDate(data.last_success.completed_at)+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?backupDate(data.last_failure.failed_at)+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}}).catch(()=>{{document.getElementById("managed-backup-state").textContent="Unavailable"}})</script>
-        <div class="card portal-card p-5 sm:p-6 mb-6">
-          <h2 class="text-lg font-semibold text-white mb-4">Stored Managed Backups</h2>
-          <div id="managed-backup-list" class="space-y-3 text-sm"><p class="text-gray-500">Loading</p></div>
-        </div>
-        <script>fetch("/api/portal/backups",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const list=document.getElementById("managed-backup-list");list.textContent="";if(!data.backups.length){{const empty=document.createElement("p");empty.className="text-gray-500";empty.textContent="No completed managed backups stored.";list.appendChild(empty);return;}}data.backups.forEach((item,index)=>{{const row=document.createElement("div");row.className="info-row rounded-xl border border-white/10 bg-white/[0.03] p-3";if(index>2)row.hidden=true;const details=document.createElement("div");const name=document.createElement("p");name.className="font-medium text-white";name.textContent=index===0?"Latest successful managed backup":item.filename;const meta=document.createElement("p");meta.className="mt-1 text-xs text-gray-500";meta.textContent=backupDate(item.completed_at)+" · "+(item.size_bytes/1048576).toFixed(1)+" MB";details.append(name,meta);const link=document.createElement("a");link.className="compact-action";link.href=item.download_url;link.textContent="Download";row.append(details,link);list.appendChild(row);}});if(data.backups.length>3){{const show=document.createElement("button");show.className="text-purple-300";show.textContent="Show all backups";show.onclick=()=>{{Array.from(list.children).forEach(row=>row.hidden=false);show.remove();}};list.appendChild(show);}}}}).catch(()=>{{document.getElementById("managed-backup-list").textContent="Backups unavailable";}})</script>
-
-        <!-- System Resources + Backup Status -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- System Stats -->
-            <div class="card portal-card p-5 sm:p-6">
-                <h2 class="text-lg font-semibold text-white mb-4">System Resources</h2>
+        <div class="dashboard-grid mb-4 sm:mb-6">
+            <section class="card portal-card p-5 sm:p-6" aria-labelledby="overview-heading">
+                <h2 id="overview-heading" class="text-lg font-semibold text-white mb-4">System Overview</h2>
                 <div class="space-y-4">
-                    <div>
-                        <div class="flex justify-between text-sm mb-1">
-                            <span class="text-gray-500">CPU Usage</span>
-                            <span class="text-white font-medium">{cpu_percent}%</span>
-                        </div>
-                        <div class="progress-bar h-2">
-                            <div class="progress-fill" style="width:{cpu_percent}%"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex justify-between text-sm mb-1">
-                            <span class="text-gray-500">Memory</span>
-                            <span class="text-white font-medium">{memory_used_gb} / {memory_total_gb} GB ({memory_percent}%)</span>
-                        </div>
-                        <div class="progress-bar h-2">
-                            <div class="progress-fill" style="width:{memory_percent}%"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex justify-between text-sm mb-1">
-                            <span class="text-gray-500">Disk Space</span>
-                            <span class="text-white font-medium">{disk_used_gb} / {disk_total_gb} GB ({disk_percent}%)</span>
-                        </div>
-                        <div class="progress-bar h-2">
-                            <div class="progress-fill" style="width:{disk_percent}%"></div>
-                        </div>
-                    </div>
+                    <div><div class="flex justify-between text-sm mb-1"><span class="text-gray-400">CPU usage</span><span class="text-white">{cpu_percent}%</span></div><div class="progress-bar h-2"><div class="progress-fill" style="width:{cpu_percent}%"></div></div></div>
+                    <div><div class="flex justify-between text-sm mb-1"><span class="text-gray-400">Memory usage</span><span class="text-white">{memory_used_gb} / {memory_total_gb} GB ({memory_percent}%)</span></div><div class="progress-bar h-2"><div class="progress-fill" style="width:{memory_percent}%"></div></div></div>
+                    <div><div class="flex justify-between text-sm mb-1"><span class="text-gray-400">Disk usage</span><span class="text-white">{disk_used_gb} / {disk_total_gb} GB ({disk_percent}%)</span></div><div class="progress-bar h-2"><div class="progress-fill" style="width:{disk_percent}%"></div></div></div>
                 </div>
-            </div>
+                <dl class="metric-grid mt-5 text-sm"><div class="metric-tile"><dt class="text-gray-500">Database / storage</dt><dd class="text-white mt-1">{db_size}</dd></div><div class="metric-tile"><dt class="text-gray-500">Home Assistant</dt><dd class="text-white mt-1">{ha_version}</dd></div><div class="metric-tile"><dt class="text-gray-500">Last report</dt><dd class="text-white mt-1">{last_seen}</dd></div></dl>
+            </section>
 
-            <!-- Backup Status -->
-            <div class="card portal-card p-5 sm:p-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white">Native Home Assistant Backup Status</h2>
-                    <span class="text-xs px-3 py-1 rounded-full {backup_badge_class}">{backup_badge_text}</span>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><p class="text-sm text-gray-500">Native automatic backups</p><p class="text-white font-medium mt-1">{native_automatic_status}</p></div>
-                    <div><p class="text-sm text-gray-500">Last native automatic backup</p><p class="text-white font-medium mt-1">{last_native_automatic}</p></div>
-                    <div><p class="text-sm text-gray-500">Next native automatic backup</p><p class="text-white font-medium mt-1">{next_backup_str}</p></div>
-                    <div><p class="text-sm text-gray-500">Local backups detected</p><p class="text-white font-medium mt-1">{local_backup_count}</p></div>
-                    <div><p class="text-sm text-gray-500">Last local backup detected</p><p class="text-white font-medium mt-1">{last_backup_str}</p></div>
-                    <div><p class="text-sm text-gray-500">Backup encryption</p><p class="text-white font-medium mt-1">{backup_encryption_status}</p></div>
-                </div>
-            </div>
+            <section class="card portal-card p-5 sm:p-6" aria-labelledby="environment-heading">
+                <div class="flex items-start justify-between gap-3"><div><h2 id="environment-heading" class="text-lg font-semibold text-white">Environment &amp; Updates</h2><p class="text-sm text-gray-500 mt-1">Home Assistant {ha_version}</p></div><span class="text-xs px-3 py-1 rounded-full {online_class}">{online_status}</span></div>
+                <div class="mt-5 text-sm"><div class="text-gray-400 mb-2">Available updates</div><div>{updates_count}</div></div>
+                <button type="button" onclick="openPortalModal('release-modal')" class="touch-action mt-5 border border-purple-400/25 bg-purple-500/10 text-purple-200 mobile-full">View release information</button>
+            </section>
         </div>
 
+        <section class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="backup-heading">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="backup-heading" class="text-lg font-semibold text-white">Backup Protection</h2><p id="backup-protection-status" class="text-sm text-gray-400 mt-1">Checking protection status…</p></div><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
+            <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Backup method</div><div class="text-white mt-1">On-demand managed backups</div></div><div class="metric-tile"><div class="text-gray-500">Automatic cloud schedule</div><div class="text-white mt-1">Not configured</div></div><div class="metric-tile"><div class="text-gray-500">Retention policy</div><div class="text-white mt-1">Not configured</div></div></div>
+            <div class="mt-6"><div class="flex items-center justify-between gap-3"><h3 class="font-semibold text-white">Managed backup history</h3><span id="managed-backup-count" class="text-xs text-gray-500"></span></div><div id="managed-backup-list" data-instance="{instance_name}" class="mt-2 text-sm"><p class="text-gray-500">Loading backups…</p></div><button id="backup-history-toggle" type="button" class="hidden touch-action mt-2 text-purple-300"></button></div>
+            <div class="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 class="font-semibold text-white">Home Assistant local backups</h3>{native_backup_html}</div>
+        </section>
 
-        <!-- Monthly Hours + Support Tickets -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Monthly Hours -->
-            <div class="card portal-card p-5 sm:p-6">
-                <h2 class="text-lg font-semibold text-white mb-4">Monthly Hours</h2>
-                <div class="flex items-center gap-4 mb-2">
-                    <div class="flex-1">
-                        <div class="progress-bar h-3">
-                            <div class="progress-fill" style="width:{hours_percent}%" title="{hours_used}h / {hours_included}h"></div>
-                        </div>
-                    </div>
-                    <span class="text-sm text-gray-400 font-medium whitespace-nowrap">{hours_used}h / {hours_included}h</span>
-                </div>
-                <p class="text-xs text-gray-500">{hours_remaining}h remaining this month</p>
-            </div>
+        <section class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="support-heading" class="text-lg font-semibold text-white">Account &amp; Support</h2><p class="text-sm text-gray-500 mt-1">Support usage, tickets and diagnostic report</p></div><a href="/portal/getting-started" class="text-sm text-purple-300">Getting Started</a></div>
+            <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Support hours</div><div class="text-white mt-1">{hours_used}h used / {hours_included}h included</div><div class="text-xs text-gray-500 mt-1">{hours_remaining}h remaining</div></div><div class="metric-tile"><div class="text-gray-500">Open tickets</div><div class="text-white mt-1">{open_ticket_count}</div></div><div class="metric-tile"><div class="text-gray-500">Latest ticket</div><div class="text-white mt-1">{latest_ticket_status}</div></div></div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5"><button type="button" onclick="document.getElementById('ticket-form').classList.toggle('hidden')" class="compact-action">New Support Ticket</button><a href="mailto:support@mybeacon.co.za" class="touch-action border border-white/10 text-white">Contact Support</a><a href="/api/portal/report" target="_blank" class="touch-action border border-white/10 text-white">Download Report</a></div>
+            <div id="ticket-form" class="hidden mt-5 p-4 bg-gray-900/60 rounded-xl border border-purple-500/10"><input type="text" id="ticket-title" placeholder="Ticket title" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"><textarea id="ticket-desc" placeholder="How can we help?" rows="3" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white"></textarea><div class="flex flex-col sm:flex-row gap-2"><select id="ticket-priority" class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 text-white"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select><button type="button" onclick="submitTicket()" class="compact-action">Submit Ticket</button></div></div>
+            <div class="mt-5"><h3 class="font-semibold text-white mb-3">Recent tickets</h3><div id="tickets-list" class="space-y-2 max-h-56 overflow-y-auto">{tickets_html}</div></div>
+        </section>
+    </main>
 
-            <!-- Quick Support Ticket Summary -->
-            <div class="card portal-card p-5 sm:p-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white">Support Tickets</h2>
-                    <button onclick="document.getElementById('ticket-form').classList.toggle('hidden')"
-                            class="text-sm bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 text-purple-300 px-3 py-1.5 rounded-lg transition">+ New</button>
-                </div>
-                <div id="ticket-form" class="hidden mb-4 p-3 bg-gray-900/50 rounded-xl border border-purple-500/10">
-                    <input type="text" id="ticket-title" placeholder="Title" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 mb-2 text-sm text-white focus:border-purple-500 focus:outline-none">
-                    <textarea id="ticket-desc" placeholder="Description" rows="2" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 mb-2 text-sm text-white focus:border-purple-500 focus:outline-none"></textarea>
-                    <div class="flex gap-2">
-                        <select id="ticket-priority" class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-purple-500 focus:outline-none">
-                            <option value="low">Low</option>
-                            <option value="normal" selected>Normal</option>
-                            <option value="high">High</option>
-                        </select>
-                        <button onclick="submitTicket()" class="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg text-sm text-white">Submit</button>
-                    </div>
-                </div>
-                <div id="tickets-list" class="space-y-2 max-h-48 overflow-y-auto">{tickets_html}</div>
-            </div>
+    <div id="setup-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="setup-modal-title" onclick="closeOnBackdrop(event,'setup-modal')">
+        <div class="card modal-panel p-5 sm:p-6" tabindex="-1"><div class="flex items-start justify-between gap-4"><div><h2 id="setup-modal-title" class="text-xl font-semibold text-white">Setup Details</h2><p class="text-sm text-gray-500 mt-1">Connection and installation values</p></div><button type="button" aria-label="Close setup details" onclick="closePortalModal('setup-modal')" class="touch-action text-gray-300">Close</button></div><span id="details-feedback" class="action-feedback block mt-2"></span>
+            <div class="detail-grid mt-4"><div class="detail-item"><div class="detail-label">Burghscape Add-on Repository URL</div><div class="mt-2 flex flex-wrap items-center gap-2"><span class="detail-value flex-1">{addon_repository_url}</span><button class="copy-chip" onclick="copyPortalValue('{addon_repository_url}','Repository URL copied','details-feedback')">Copy</button></div></div><div class="detail-item"><div class="detail-label">Subscription Token</div><div class="mt-2 flex flex-wrap items-center gap-2"><span id="subscription-token-value" class="detail-value flex-1" data-masked="{subscription_token_masked}" data-secret="{subscription_token_secret}" data-visible="false">{subscription_token_masked}</span><button class="copy-chip" {subscription_token_disabled} onclick="toggleSecret('subscription-token-value',this,'details-feedback')">Show</button><button class="copy-chip" {subscription_token_disabled} onclick="copySecretValue('subscription-token-value','Subscription token copied','details-feedback')">Copy</button></div></div><div class="detail-item"><div class="detail-label">Home Assistant Remote URL</div><div class="mt-2 flex flex-wrap items-center gap-2"><span class="detail-value flex-1">{remote_url}</span><button class="copy-chip" onclick="copyPortalValue('{remote_url}','Remote URL copied','details-feedback')">Copy</button><a href="{remote_url}" target="_blank" rel="noopener" class="copy-chip">Open</a></div></div><div class="detail-item"><div class="detail-label">Client Portal URL</div><div class="mt-2 flex flex-wrap items-center gap-2"><span class="detail-value flex-1">{client_portal_url}</span><button class="copy-chip" onclick="copyPortalValue('{client_portal_url}','Client Portal URL copied','details-feedback')">Copy</button></div></div><div class="detail-item"><div class="detail-label">Instance name</div><div class="detail-value">{instance_name}</div></div><div class="detail-item"><div class="detail-label">Connection status</div><div class="detail-value {online_text_class}">{online_status}</div></div></div>
         </div>
-
-
     </div>
+    <div id="release-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="release-modal-title" onclick="closeOnBackdrop(event,'release-modal')"><div class="card modal-panel p-5 sm:p-6" tabindex="-1"><div class="flex items-start justify-between gap-4"><div><h2 id="release-modal-title" class="text-xl font-semibold text-white">Home Assistant release information</h2><p class="text-sm text-gray-500 mt-1">Review changes before updating.</p></div><button type="button" aria-label="Close release information" onclick="closePortalModal('release-modal')" class="touch-action text-gray-300">Close</button></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5"><a href="https://www.home-assistant.io/blog/categories/release-notes/" target="_blank" rel="noopener" class="portal-action"><span class="block font-semibold text-white">Release Notes</span><span class="block text-sm text-gray-400 mt-1">Monthly Home Assistant updates</span></a><a href="https://www.home-assistant.io/blog/categories/breaking-changes/" target="_blank" rel="noopener" class="portal-action"><span class="block font-semibold text-white">Breaking Changes</span><span class="block text-sm text-gray-400 mt-1">Compatibility information to review</span></a></div></div></div>
 
     <script>
+        const backupDate=v=>new Intl.DateTimeFormat(undefined,{{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Johannesburg'}}).format(new Date(v));
+        fetch('/api/portal/managed-backup-state',{{credentials:'include'}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const op=data.current_operation;document.getElementById('managed-backup-state').textContent=op?op.state:'No active operation';}}).catch(()=>{{document.getElementById('managed-backup-state').textContent='Status unavailable';}});
+        fetch('/api/portal/backups',{{credentials:'include'}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const list=document.getElementById('managed-backup-list'),toggle=document.getElementById('backup-history-toggle'),instance=list.dataset.instance;list.textContent='';document.getElementById('managed-backup-count').textContent=data.backups.length+' stored';document.getElementById('backup-protection-status').textContent=data.backups.length?'Protected by '+data.backups.length+' successful managed backup'+(data.backups.length===1?'':'s'):'No successful managed backup stored';if(!data.backups.length){{list.innerHTML='<p class="text-gray-500 py-3">No completed managed backups stored.</p>';return;}}const rows=[];data.backups.forEach((item,index)=>{{const row=document.createElement('div');row.className='backup-row';row.hidden=index>2;const details=document.createElement('div');details.className='min-w-0';const title=document.createElement(index===0?'h3':'p');title.className=index===0?'font-semibold text-white text-base':'font-medium text-white';title.textContent=instance+' — '+backupDate(item.completed_at);const meta=document.createElement('p');meta.className='text-sm text-gray-400 mt-1';meta.textContent='Successful · '+(item.size_bytes/1048576).toFixed(1)+' MB';details.append(title,meta);const link=document.createElement('a');link.className='compact-action';link.href=item.download_url;link.textContent='Download';row.append(details,link);list.appendChild(row);rows.push(row);}});if(rows.length>3){{let expanded=false;toggle.classList.remove('hidden');toggle.textContent='Show all backups';toggle.onclick=()=>{{expanded=!expanded;rows.forEach((row,index)=>row.hidden=!expanded&&index>2);toggle.textContent=expanded?'Show fewer backups':'Show all backups';}};}}}}).catch(()=>{{document.getElementById('managed-backup-list').innerHTML='<p class="text-gray-500 py-3">Backup history unavailable.</p>';}});
+    </script>
+
+    <script>
+        let activePortalModal = null;
+        function toggleMobileNav(button) {{ const nav=document.getElementById('mobile-nav'); const hidden=nav.classList.toggle('hidden'); if(button) button.setAttribute('aria-expanded', String(!hidden)); }}
+        function toggleAccountPanel() {{ document.getElementById('pw-form-nav').classList.toggle('hidden'); }}
+        function openPortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.remove('hidden'); document.body.style.overflow='hidden'; activePortalModal=id; const panel=modal.querySelector('[tabindex]'); if(panel) panel.focus(); }}
+        function closePortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.add('hidden'); document.body.style.overflow=''; if(activePortalModal===id) activePortalModal=null; }}
+        function closeOnBackdrop(event,id) {{ if(event.target===event.currentTarget) closePortalModal(id); }}
+        document.addEventListener('keydown', event => {{ if(event.key==='Escape' && activePortalModal) closePortalModal(activePortalModal); }});
         function setPortalFeedback(id, message, ok) {{
             const el = document.getElementById(id);
             if (!el) return;
@@ -1355,6 +1235,8 @@ async def client_portal(request: Request):
 
         if not tickets:
             tickets_html = '<p class="text-gray-500 text-sm">No tickets yet.</p>'
+        open_ticket_count = sum(1 for ticket in tickets if ticket.status in ("open", "in_progress"))
+        latest_ticket_status = tickets[0].status.replace("_", " ").title() if tickets else "No tickets"
 
         # Build users HTML
         users_html = ""
@@ -1543,6 +1425,25 @@ async def client_portal(request: Request):
                 else:
                     next_backup_str = nb.strftime("%Y-%m-%d %H:%M")
 
+        if instance and instance.last_seen:
+            from datetime import timezone as _timezone
+            from zoneinfo import ZoneInfo
+            report_time = instance.last_seen
+            if report_time.tzinfo is None:
+                report_time = report_time.replace(tzinfo=_timezone.utc)
+            last_seen_display = report_time.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %Y, %H:%M")
+        else:
+            last_seen_display = "No report received"
+
+        native_items = []
+        if local_backup_count not in ("Unavailable", "0", 0, None):
+            native_items.append('<p class="mt-2 text-sm text-gray-300"><strong class="text-white">{} detected</strong></p>'.format(escape(str(local_backup_count))))
+        if last_backup_str not in ("Unavailable", "Unknown", "N/A", "Not configured", ""):
+            native_items.append('<p class="mt-1 text-sm text-gray-400">Latest local backup: {}</p>'.format(escape(str(last_backup_str))))
+        if not native_items:
+            native_items.append('<p class="mt-2 text-sm text-gray-400">Detailed Home Assistant scheduling information is unavailable.</p>')
+        native_backup_html = "".join(native_items)
+
         return PORTAL_HTML.format(
             onboarding_banner_html=onboarding_banner_html,
             setup_nav_label=setup_nav_label,
@@ -1573,9 +1474,12 @@ async def client_portal(request: Request):
             uptime=uptime,
             updates_count=updates_html,
             updates_class="text-emerald-400",
-            last_seen=((instance.last_seen.strftime("%Y-%m-%d %H:%M") if instance.last_seen else "Never") if instance else "Never"),
+            last_seen=last_seen_display,
             ha_news_section=ha_news_section,
             tickets_html=tickets_html,
+            open_ticket_count=open_ticket_count,
+            latest_ticket_status=latest_ticket_status,
+            native_backup_html=native_backup_html,
             hours_used=hours_used,
             hours_included=hours_included,
             hours_remaining=hours_remaining,

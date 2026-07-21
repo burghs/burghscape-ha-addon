@@ -1,5 +1,14 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.1 Client Portal UX and mobile refinement
+
+- Reorganized the Client Portal into a compact instance header, System Overview, Environment & Updates, consolidated Backup Protection, and Account & Support.
+- Moved setup values into a mobile-scrollable Setup Details modal while preserving masked token Show/Copy, URL Copy/Open, Getting Started, account, logout, report, and support-ticket actions.
+- Consolidated managed and reliable native backup information, retained client-scoped downloads, and used instance/date/size labels instead of internal archive filenames.
+- Added a release-information modal preserving Home Assistant release-note and breaking-change links.
+- Added mobile navigation, touch-sized actions, responsive stacking, focus indicators, Escape/backdrop modal closing, and body-scroll locking.
+- No managed scheduling, retention, restore, Agent, Management Portal, authentication, ownership, or transport changes were made.
+
 ## 2026-07-21 — Backup presentation and native telemetry correction
 
 - Made client and Home Assistant instance ownership prominent in Management Portal backup entries and generated sanitized client-instance-local-time attachment names.
