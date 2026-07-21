@@ -7,6 +7,7 @@ export default function Backups() {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [managedState, setManagedState] = useState([]);
+  const [managedBackups, setManagedBackups] = useState([]);
 
   const fetchBackups = useCallback(async () => {
     try {
@@ -18,7 +19,7 @@ export default function Backups() {
         const data = await res.json();
         setBackups(data.backups || []);
       }
-      if (stateRes.ok) { const data = await stateRes.json(); setManagedState(data.clients || []); }
+      if (stateRes.ok) { const data = await stateRes.json(); setManagedState(data.clients || []); setManagedBackups(data.backups || []); }
       setLastUpdated(new Date());
     } catch (err) {
       setError(err.message);
@@ -57,6 +58,27 @@ export default function Backups() {
           <Card key={item.client_id} compact><div className="flex flex-wrap justify-between gap-4"><div><div className="flex items-center gap-3"><span className="text-white font-semibold">{item.client_name}</span><StatusBadge status={op?.state || "unknown"}>{op?.state || "No operation"}</StatusBadge></div><div className="text-sm text-gray-500 mt-2">Automatic: {item.automatic_enabled ? "Enabled" : "Disabled"} · Last success: {item.last_success ? formatDate(item.last_success.completed_at) + " (" + formatSize(item.last_success.size_bytes) + ")" : "None"} · Last failure: {item.last_failure ? formatDate(item.last_failure.failed_at) + " (" + (item.last_failure.error_category || "Failed") + ")" : "None"}</div></div></div></Card>
         ); })}
         {managedState.length === 0 && <EmptyState>No managed backup state reported.</EmptyState>}
+      </div>
+
+      <h2 className="text-white font-semibold mb-3">Stored Managed Backups</h2>
+      <div className="space-y-3 mb-8">
+        {managedBackups.map((backup) => (
+          <Card key={backup.download_url} compact>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-semibold text-white">{backup.filename}</span>
+                  <StatusBadge status={backup.status}>{backup.status}</StatusBadge>
+                </div>
+                <div className="mt-1 text-sm text-gray-500">
+                  {backup.client_name} · {backup.instance_name} · {formatSize(backup.size_bytes)} · {formatDate(backup.completed_at)}
+                </div>
+              </div>
+              <Button as="a" href={backup.download_url} download variant="primary">Download</Button>
+            </div>
+          </Card>
+        ))}
+        {managedBackups.length === 0 && <EmptyState>No completed managed backups stored.</EmptyState>}
       </div>
 
       {backups.length === 0 ? (

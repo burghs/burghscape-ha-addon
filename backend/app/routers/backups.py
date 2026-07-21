@@ -9,7 +9,7 @@ import re
 import secrets
 
 from fastapi import APIRouter, HTTPException, Header, Depends, Query, Body, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -491,6 +491,26 @@ async def get_backup_download_url(
     )
 
 
+async def build_backup_file_response(backup: Backup, client: Client):
+    """Build an authenticated download response through the configured storage backend."""
+    if backup.status != "completed":
+        raise HTTPException(status_code=400, detail="Backup not ready")
+    key = validate_client_storage_key(client, backup.storage_key)
+    backend = get_client_storage_backend(get_backup_storage_config())
+    metadata = await backend.get_object_metadata(key)
+    if not metadata or metadata.size <= 0:
+        raise HTTPException(status_code=404, detail="Backup object not found")
+    filename = sanitize_backup_filename(backup.filename or PurePosixPath(key).name)
+    media_type = "application/gzip" if filename.lower().endswith((".tar.gz", ".tgz")) else "application/x-tar"
+    if hasattr(backend, "_full_path"):
+        path = backend._full_path(key)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Backup object not found")
+        return FileResponse(path, media_type=media_type, filename=filename)
+    download_url = await backend.generate_presigned_download_url(key, expires_in=300, filename=filename)
+    return RedirectResponse(download_url, status_code=302)
+
+
 @router.get("/download-file/{backup_id}")
 async def download_backup_file(
     backup_id: int,
@@ -503,14 +523,7 @@ async def download_backup_file(
     backup = result.scalars().first()
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
-    if backup.status != "completed":
-        raise HTTPException(status_code=400, detail="Backup not ready")
-    key = validate_client_storage_key(client, backup.storage_key)
-    backend = get_client_storage_backend(get_backup_storage_config())
-    path = backend._full_path(key)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Backup object not found")
-    return FileResponse(path, media_type="application/gzip", filename=backup.filename)
+    return await build_backup_file_response(backup, client)
 
 
 @router.delete("/{backup_id}")

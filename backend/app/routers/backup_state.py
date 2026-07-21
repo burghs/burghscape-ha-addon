@@ -6,8 +6,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
-from models import Backup, BackupOperation, Client, ClientUser
+from models import Backup, BackupOperation, Client, ClientUser, HomeAssistantInstance
 from routers.agent import validate_token
+from routers.backups import build_backup_file_response
+from admin_auth import get_current_admin
 from routers.portal_state import portal_sessions
 
 router = APIRouter()
@@ -93,9 +95,42 @@ async def report_backup_state(report: BackupStateReport, authorization: Optional
     return serialize_operation(operation, now)
 
 @router.get("/api/admin/managed-backup-state")
-async def admin_backup_state(db: AsyncSession = Depends(get_db)):
+async def admin_backup_state(admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     clients = (await db.execute(select(Client).order_by(Client.name))).scalars().all()
-    return {"clients": [{"client_id": c.id, "client_name": c.name, **await client_backup_summary(db, c.id)} for c in clients]}
+    completed = (await db.execute(
+        select(Backup).where(Backup.status == "completed").order_by(desc(Backup.completed_at), desc(Backup.created_at))
+    )).scalars().all()
+    instances = (await db.execute(select(HomeAssistantInstance))).scalars().all()
+    instance_names = {item.client_id: item.name for item in instances}
+    backups = []
+    for backup in completed:
+        client = next((item for item in clients if item.id == backup.client_id), None)
+        if not client:
+            continue
+        backups.append({
+            "filename": backup.filename,
+            "client_name": client.name,
+            "instance_name": instance_names.get(backup.client_id) or client.name,
+            "size_bytes": backup.size_bytes or 0,
+            "status": backup.status,
+            "completed_at": _iso(backup.completed_at or backup.created_at),
+            "download_url": f"/api/admin/managed-backups/{backup.id}/download",
+        })
+    return {"clients": [{"client_id": c.id, "client_name": c.name, **await client_backup_summary(db, c.id)} for c in clients], "backups": backups}
+
+@router.get("/api/admin/managed-backups/{backup_id}/download")
+async def admin_managed_backup_download(
+    backup_id: int,
+    admin: dict = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    backup = (await db.execute(select(Backup).where(Backup.id == backup_id))).scalars().first()
+    if not backup:
+        raise HTTPException(404, "Backup not found")
+    client = (await db.execute(select(Client).where(Client.id == backup.client_id))).scalars().first()
+    if not client:
+        raise HTTPException(404, "Backup not found")
+    return await build_backup_file_response(backup, client)
 
 @router.get("/api/portal/managed-backup-state")
 async def portal_backup_state(request: Request, db: AsyncSession = Depends(get_db)):

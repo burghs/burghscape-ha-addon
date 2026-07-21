@@ -8,7 +8,8 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
-from models import Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
+from models import Backup, Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
+from routers.backups import build_backup_file_response
 
 router = APIRouter()
 
@@ -197,7 +198,12 @@ PORTAL_HTML = """<!DOCTYPE html>
           <div class="info-row mb-4"><h2 class="text-lg font-semibold text-white">Burghscape Managed Backup</h2><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"><div><p class="text-gray-500">Automatic backups</p><p id="managed-backup-auto" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last successful backup</p><p id="managed-backup-success" class="text-white mt-1">Loading</p></div><div><p class="text-gray-500">Last failure</p><p id="managed-backup-failure" class="text-white mt-1">Loading</p></div></div>
         </div>
-        <script>fetch("/api/portal/managed-backup-state",{credentials:"include"}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Disabled";document.getElementById("managed-backup-success").textContent=data.last_success?new Date(data.last_success.completed_at).toLocaleString()+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?new Date(data.last_failure.failed_at).toLocaleString()+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}).catch(()=>{document.getElementById("managed-backup-state").textContent="Unavailable"})</script>
+        <script>fetch("/api/portal/managed-backup-state",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const op=data.current_operation;document.getElementById("managed-backup-state").textContent=op?op.state:"No operation reported";document.getElementById("managed-backup-auto").textContent=data.automatic_enabled?"Enabled":"Disabled";document.getElementById("managed-backup-success").textContent=data.last_success?new Date(data.last_success.completed_at).toLocaleString()+" · "+Math.round(data.last_success.size_bytes/1048576)+" MB":"None recorded";document.getElementById("managed-backup-failure").textContent=data.last_failure?new Date(data.last_failure.failed_at).toLocaleString()+" · "+(data.last_failure.error_category||"Failed"):"None recorded"}}).catch(()=>{{document.getElementById("managed-backup-state").textContent="Unavailable"}})</script>
+        <div class="card portal-card p-5 sm:p-6 mb-6">
+          <h2 class="text-lg font-semibold text-white mb-4">Stored Managed Backups</h2>
+          <div id="managed-backup-list" class="space-y-3 text-sm"><p class="text-gray-500">Loading</p></div>
+        </div>
+        <script>fetch("/api/portal/backups",{{credentials:"include"}}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{{const list=document.getElementById("managed-backup-list");list.textContent="";if(!data.backups.length){{const empty=document.createElement("p");empty.className="text-gray-500";empty.textContent="No completed managed backups stored.";list.appendChild(empty);return;}}data.backups.forEach(item=>{{const row=document.createElement("div");row.className="info-row rounded-xl border border-white/10 bg-white/[0.03] p-3";const details=document.createElement("div");const name=document.createElement("p");name.className="font-medium text-white";name.textContent=item.filename;const meta=document.createElement("p");meta.className="mt-1 text-xs text-gray-500";meta.textContent=new Date(item.completed_at).toLocaleString()+" · "+Math.round(item.size_bytes/1048576)+" MB";details.append(name,meta);const link=document.createElement("a");link.className="compact-action";link.href=item.download_url;link.textContent="Download";row.append(details,link);list.appendChild(row);}});}}).catch(()=>{{document.getElementById("managed-backup-list").textContent="Backups unavailable";}})</script>
 
         <!-- System Resources + Backup Status -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -986,7 +992,7 @@ async def portal_backups(request: Request):
         from models import Backup
         from sqlalchemy import desc
         bresults = await db.execute(
-            select(Backup).where(Backup.client_id == user.client_id)
+            select(Backup).where(Backup.client_id == user.client_id, Backup.status == "completed")
             .order_by(desc(Backup.started_at))
             .limit(20)
         )
@@ -1011,7 +1017,7 @@ from sqlalchemy import desc
 
 @router.get("/api/portal/backups/download/{backup_id}")
 async def portal_backup_download(backup_id: int, request: Request):
-    """Download a backup file for the logged-in client."""
+    """Download a completed backup owned by the logged-in client."""
     token = request.cookies.get("portal_token", "")
     if not token:
         raise HTTPException(status_code=401)
@@ -1019,31 +1025,18 @@ async def portal_backup_download(backup_id: int, request: Request):
         user_id = portal_sessions.get(token)
         if not user_id:
             raise HTTPException(status_code=401)
-        result = await db.execute(select(ClientUser).where(ClientUser.id == user_id))
-        user = result.scalars().first()
+        user = (await db.execute(select(ClientUser).where(ClientUser.id == user_id))).scalars().first()
         if not user or not user.is_active:
             raise HTTPException(status_code=401)
-        bresult = await db.execute(
+        backup = (await db.execute(
             select(Backup).where(Backup.id == backup_id, Backup.client_id == user.client_id)
-        )
-        backup = bresult.scalars().first()
+        )).scalars().first()
         if not backup:
             raise HTTPException(status_code=404, detail="Backup not found")
-        if backup.status != "completed":
-            raise HTTPException(status_code=400, detail="Backup not ready")
-        from pathlib import PurePosixPath
-        from storage.factory import get_client_storage_backend
-        from config import get_settings
-        settings = get_settings()
-        key_path = PurePosixPath(backup.storage_key or "")
-        if not backup.storage_key or backup.storage_key.startswith("/") or ".." in key_path.parts or len(key_path.parts) < 2 or key_path.parts[0] != str(user.client_id):
-            raise HTTPException(status_code=403, detail="Invalid backup ownership")
-        storage_config = {"backend": "local", "path": getattr(settings, "BACKUP_LOCAL_PATH", "/backups/client-backups")}
-        backend = get_client_storage_backend(storage_config)
-        path = backend._full_path(backup.storage_key)
-        if not path.is_file():
-            raise HTTPException(status_code=404, detail="Backup object not found")
-        return FileResponse(path, media_type="application/gzip", filename=backup.filename)
+        client = (await db.execute(select(Client).where(Client.id == user.client_id))).scalars().first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Backup not found")
+        return await build_backup_file_response(backup, client)
 
 
 @router.get("/api/portal/report")
