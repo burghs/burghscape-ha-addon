@@ -1,5 +1,14 @@
 # Platform Changelog
 
+## 2026-07-21 — RC1.2.1 Management Portal cleanup
+
+- Replaced the misleading page-level remaining-hours metric with aggregate ticket-derived support time logged.
+- Omitted unavailable HA database/IP fields, emphasized the latest available stored managed-backup date, and removed developer-facing backup wording.
+- Grouped Platform Server Backups under an expandable Burghscape Platform summary while preserving existing authenticated downloads.
+- Grouped Support Tickets by client with ticket counts and included/logged/remaining/potentially-billable support summaries.
+- Added explicitly authenticated, confirmation-gated deletion of one support ticket with scoped database deletion, controlled failures, identifier-only logging, and totals recalculated from remaining tickets.
+- Added no schema changes, backup deletion, Agent changes, Client Portal redesign, billing, or remote-control features.
+
 ## 2026-07-21 — RC1.2 Management Portal refinement
 
 - Added responsive Management Portal client cards, portal-user cards, operational HA instance cards, grouped Home Assistant backups, separate Platform Server Backups, support ticket detail/resolution workflow, and safe Settings health summary.

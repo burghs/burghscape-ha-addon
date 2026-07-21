@@ -4,10 +4,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from database import get_db
 from models import Client, SupportTicket
 from support_hours import calculate_support_hours, format_hours
+from admin_auth import get_current_admin
+from loguru import logger
 router = APIRouter()
 
 class TicketCreate(BaseModel):
@@ -76,11 +78,25 @@ async def update_ticket(ticket_id: int, update: TicketUpdate, db: AsyncSession =
     return serialize_ticket(ticket, client.name if client else None)
 
 @router.delete("/{ticket_id}")
-async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_ticket(
+    ticket_id: int,
+    admin: dict = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
     ticket = (await db.execute(select(SupportTicket).where(SupportTicket.id == ticket_id))).scalar_one_or_none()
-    if not ticket: raise HTTPException(404, "Ticket not found")
-    await db.execute(delete(SupportTicket).where(SupportTicket.id == ticket_id)); await db.commit()
-    return {"message": "Ticket deleted"}
+    if not ticket:
+        logger.warning("Support ticket deletion failed admin={} ticket_id={} reason=not_found", admin.get("username"), ticket_id)
+        raise HTTPException(404, "Ticket not found")
+    client_id = ticket.client_id
+    try:
+        await db.delete(ticket)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Support ticket deletion failed admin={} ticket_id={} client_id={}", admin.get("username"), ticket_id, client_id)
+        raise HTTPException(500, "Ticket could not be deleted")
+    logger.info("Support ticket deleted admin={} ticket_id={} client_id={}", admin.get("username"), ticket_id, client_id)
+    return {"message": "Ticket deleted", "ticket_id": ticket_id, "client_id": client_id}
 
 @router.post("/{ticket_id}/log-hours")
 async def log_hours(ticket_id: int, hours: float, db: AsyncSession = Depends(get_db)):

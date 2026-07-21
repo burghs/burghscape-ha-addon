@@ -392,7 +392,7 @@ export default function Clients() {
   const totalClients = clients.length;
   const activeClients = clients.filter((c) => c.status === 'active').length;
   const onlineNow = clients.filter((c) => c.is_online).length;
-  const totalHoursRemaining = clients.reduce((sum, c) => sum + (c.hours_remaining || 0), 0);
+  const totalSupportTimeLogged = Object.values(supportSummaries).reduce((sum, item) => sum + Number(item.logged || 0), 0);
 
   const getStatusBadge = (status) => (
     <StatusBadge status={status === 'active' ? 'active' : 'inactive'} light>
@@ -491,7 +491,7 @@ export default function Clients() {
         <StatCard label="Total Clients" value={totalClients} tone="primary" />
         <StatCard label="Active" value={activeClients} tone="success" />
         <StatCard label="Online Now" value={onlineNow} tone="info" />
-        <StatCard label="Hours Remaining" value={`${totalHoursRemaining}h`} tone="warning" />
+        <StatCard label="Support Time Logged This Month" value={`${Number(totalSupportTimeLogged.toFixed(2))}h`} tone="warning" />
       </div>
 
       <div className="space-y-3 md:hidden">

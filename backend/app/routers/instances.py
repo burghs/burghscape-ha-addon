@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Backup, BackupOperation, Client, HomeAssistantInstance
+from routers.backups import is_customer_backup_available
 router = APIRouter()
 
 class InstanceStatus(BaseModel):
@@ -41,10 +42,14 @@ async def list_instances(db: AsyncSession = Depends(get_db)):
     instances = (await db.execute(select(HomeAssistantInstance).order_by(HomeAssistantInstance.name))).scalars().all()
     clients = (await db.execute(select(Client))).scalars().all()
     client_names = {client.id: client.name for client in clients}
+    client_by_id = {client.id: client for client in clients}
     tunnel_clients = {client.id for client in clients if client.cloudflare_tunnel_id}
     completed = (await db.execute(select(Backup).where(Backup.status == "completed").order_by(desc(Backup.completed_at), desc(Backup.created_at)))).scalars().all()
     latest_backups = {}
-    for backup in completed: latest_backups.setdefault(backup.client_id, backup)
+    for backup in completed:
+        client = client_by_id.get(backup.client_id)
+        if client and backup.client_id not in latest_backups and await is_customer_backup_available(backup, client):
+            latest_backups[backup.client_id] = backup
     operations = (await db.execute(select(BackupOperation).order_by(desc(BackupOperation.updated_at)))).scalars().all()
     latest_operations = {}
     for operation in operations: latest_operations.setdefault(operation.client_id, operation)
@@ -52,7 +57,7 @@ async def list_instances(db: AsyncSession = Depends(get_db)):
     response = []
     for instance in instances:
         report = reports.get(instance.client_id, {})
-        ip = report.get("ip_address") or instance.ip_address
+        ip = report.get("ip_address")
         if ip in ("0.0.0.0", "N/A", "unknown"): ip = None
         latest = latest_backups.get(instance.client_id)
         operation = latest_operations.get(instance.client_id)
