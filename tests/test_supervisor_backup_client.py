@@ -74,7 +74,7 @@ def run(coro):
 class SupervisorBackupClientTests(unittest.TestCase):
     def test_config_uses_manager_role(self):
         text = (REPO / "burghscape_agent" / "config.yaml").read_text()
-        self.assertIn('version: "0.2.54"', text)
+        self.assertIn('version: "0.2.55"', text)
         self.assertIn("hassio_api: true", text)
         self.assertIn("hassio_role: manager", text)
         self.assertIn("backup_enabled: false", text)

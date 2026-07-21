@@ -20,14 +20,19 @@ class BackupTelemetryTests(unittest.TestCase):
 
     def test_supervisor_backup_list_returns_complete_telemetry(self):
         result = self.client._parse_backup_list([
-            {"slug": "older", "date": "2026-07-18T10:00:00+00:00", "size": 100},
-            {"slug": "22f6ed92", "date": "2026-07-19T10:00:00+00:00", "size": "94320640"},
+            {"slug": "older", "date": "2026-07-18T10:00:00+00:00", "size": 100, "type": "partial"},
+            {"slug": "22f6ed92", "date": "2026-07-19T10:00:00+00:00", "size": "94320640", "type": "full", "protected": True},
         ])
         self.assertTrue(result["enabled"])
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["file_count"], 2)
         self.assertEqual(result["total_size_bytes"], 94320740)
         self.assertEqual(result["last_backup_timestamp"], "2026-07-19T10:00:00+00:00")
+        self.assertEqual(result["backup_types"], ["full", "partial"])
+        self.assertIsNone(result["native_automatic_enabled"])
+        self.assertIsNone(result["next_native_automatic_backup"])
+        self.assertIsNone(result["encryption_enabled"])
+        self.assertNotIn("key", result)
 
     def test_malformed_entries_do_not_break_heartbeat_telemetry(self):
         result = self.client._parse_backup_list([None, "bad", {"date": "not-a-date", "size": "bad"}])

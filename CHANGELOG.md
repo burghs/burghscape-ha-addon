@@ -1,3 +1,11 @@
+# 0.2.55
+
+- Prefer the authenticated supported Supervisor `/backups` inventory for native Home Assistant backup telemetry while preserving Core and filesystem fallbacks.
+- Report reliable local backup count, date, total size, and full/partial categories.
+- Stop estimating a daily next backup; native automatic schedule fields remain Unknown because Supervisor inventory does not expose them.
+- Keep encryption status Unknown because no safe authoritative global boolean is available; encryption keys are never requested, parsed, stored, transmitted, or logged.
+- Managed backup creation, upload, operation polling, checksums, and heartbeats are unchanged.
+
 # 0.2.54
 
 - Poll for administrator-queued managed backup operations and run them through the existing manual create, download, upload, and operation-state workflow.

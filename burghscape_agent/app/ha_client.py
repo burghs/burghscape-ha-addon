@@ -107,6 +107,30 @@ class HAClient:
     def count_update_entities(self, states: list) -> list[str]:
         return [s.get("entity_id", "").replace("update.", "").replace("_", " ").title() for s in states if s.get("entity_id", "").startswith("update.") and s.get("state") == "on"]
 
+    async def _get_supervisor_backup_inventory(self) -> dict | None:
+        """Read supported non-secret backup inventory directly from Supervisor."""
+        token = os.environ.get("SUPERVISOR_TOKEN", "")
+        token_path = "/run/s6/container_environment/SUPERVISOR_TOKEN"
+        if not token and os.path.isfile(token_path):
+            with open(token_path) as token_file:
+                token = token_file.read().strip()
+        if not token:
+            return None
+        headers = {"Authorization": f"Bearer {token}"}
+        async with aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as session:
+            for base_url in ("http://supervisor", "http://172.30.32.2"):
+                try:
+                    async with session.get(f"{base_url}/backups") as response:
+                        if response.status != 200:
+                            continue
+                        payload = await response.json()
+                        data = payload.get("data", payload) if isinstance(payload, dict) else payload
+                        items = data.get("backups", []) if isinstance(data, dict) else data
+                        return self._parse_backup_list(items)
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    continue
+        return None
+
     async def _get_ha_backup_api(self) -> dict:
         """Check HA backup status via filesystem (/backup/ dir) with API fallback.
         
@@ -122,9 +146,18 @@ class HAClient:
             "last_backup_timestamp": None,
             "next_backup": None,
             "error": None,
+            "native_automatic_enabled": None,
+            "last_native_automatic_backup": None,
+            "next_native_automatic_backup": None,
+            "backup_types": [],
+            "encryption_enabled": None,
         }
         
-        # --- Method 1: Filesystem check (most reliable) ---
+        supervisor_inventory = await self._get_supervisor_backup_inventory()
+        if supervisor_inventory is not None:
+            return supervisor_inventory
+
+        # --- Method 1: Filesystem fallback ---
         try:
             import os, glob, time
             backup_dir = "/backup"
@@ -161,17 +194,6 @@ class HAClient:
                     
                     backup["last_backup_timestamp"] = mtime
                     backup["status"] = "ok"
-                    
-                    # Estimate next backup (assume daily)
-                    next_ts = mtime + 86400
-                    if next_ts > now:
-                        remaining = next_ts - now
-                        if remaining < 3600:
-                            backup["next_backup"] = f"In {int(remaining // 60)}m"
-                        else:
-                            backup["next_backup"] = f"In {int(remaining // 3600)}h"
-                    else:
-                        backup["next_backup"] = "Overdue"
                     
                     import logging as _log
                     _log = _log.getLogger("burghscape.agent")
@@ -231,8 +253,13 @@ class HAClient:
             "last_backup_timestamp": None,
             "next_backup": None,
             "error": None,
+            "native_automatic_enabled": None,
+            "last_native_automatic_backup": None,
+            "next_native_automatic_backup": None,
+            "backup_types": [],
+            "encryption_enabled": None,
         }
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         if not isinstance(backups_list, list) or not backups_list:
             return backup
@@ -245,6 +272,7 @@ class HAClient:
         backup["enabled"] = True
         backup["status"] = "ok"
         backup["file_count"] = len(normalized)
+        backup["backup_types"] = sorted({str(item.get("type")) for item in normalized if item.get("type") in ("full", "partial")})
 
         total = 0
         for item in normalized:
@@ -270,11 +298,6 @@ class HAClient:
                     backup["last_backup"] = f"{delta.seconds // 3600}h ago"
                 else:
                     backup["last_backup"] = f"{delta.seconds // 60}m ago"
-                next_dt = dt + timedelta(days=1)
-                now = datetime.now().astimezone()
-                if next_dt > now:
-                    remaining = (next_dt - now).total_seconds()
-                    backup["next_backup"] = f"In {int(remaining // 60)}m" if remaining < 3600 else f"In {int(remaining // 3600)}h"
             except (ValueError, TypeError):
                 backup["last_backup"] = str(backup_date)[:19]
 
@@ -290,6 +313,11 @@ class HAClient:
             "last_backup_timestamp": None,
             "next_backup": None,
             "error": None,
+            "native_automatic_enabled": None,
+            "last_native_automatic_backup": None,
+            "next_native_automatic_backup": None,
+            "backup_types": [],
+            "encryption_enabled": None,
         }
         
         # Look for onedrive backup sensors
