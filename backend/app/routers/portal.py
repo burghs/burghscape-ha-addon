@@ -101,13 +101,13 @@ PORTAL_HTML = """<!DOCTYPE html>
                 <span class="hidden lg:inline text-sm text-gray-400 truncate">{client_name}</span>
             </div>
             <div class="hidden sm:flex shrink-0 items-center gap-4 text-sm">
-                <span class="text-gray-400">{user_name}</span><a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
+                <span class="text-gray-400">{user_name}</span><a href="/portal/whats-new" class="nav-link text-gray-400 hover:text-purple-300">What’s New <span id="campaign-unread-desktop" class="hidden badge badge-primary ml-1"></span></a><a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
                 <button type="button" onclick="toggleAccountPanel()" class="nav-link text-gray-400 hover:text-purple-300">Account</button><a href="/portal/logout" class="nav-link text-gray-400 hover:text-purple-300">Logout</a>
             </div>
             <button type="button" class="sm:hidden touch-action border border-white/10 text-white" aria-controls="mobile-nav" aria-expanded="false" onclick="toggleMobileNav(this)">Menu</button>
         </div>
         <div id="mobile-nav" class="hidden sm:hidden max-w-7xl mx-auto mt-3 grid gap-2 border-t border-white/10 pt-3 text-sm">
-            <span class="text-gray-400 px-2">{user_name}</span><a href="/portal/getting-started" class="touch-action justify-start text-purple-300">{setup_nav_label}</a>
+            <span class="text-gray-400 px-2">{user_name}</span><a href="/portal/whats-new" class="touch-action justify-start text-gray-300">What’s New <span id="campaign-unread-mobile" class="hidden badge badge-primary ml-1"></span></a><a href="/portal/getting-started" class="touch-action justify-start text-purple-300">{setup_nav_label}</a>
             <button type="button" onclick="toggleAccountPanel();toggleMobileNav(document.querySelector('[aria-controls=mobile-nav]'))" class="touch-action justify-start text-gray-300">Account</button><a href="/portal/logout" class="touch-action justify-start text-gray-300">Logout</a>
         </div>
         <div id="pw-form-nav" class="hidden max-w-7xl mx-auto mt-3 p-4 bg-gray-900/80 rounded-xl border border-purple-500/10 sm:max-w-sm sm:ml-auto">
@@ -186,6 +186,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         function choosePortalTheme(value) {{ window.MyBeaconTheme.setPreference(value); syncThemeControls(); }}
         window.addEventListener('mybeacon-theme-change',syncThemeControls);
         syncThemeControls();
+        fetch('/api/portal/campaigns/unread-count',{{credentials:'include'}}).then(r=>r.ok?r.json():null).then(data=>{{if(!data||!data.unread_count)return;['campaign-unread-desktop','campaign-unread-mobile'].forEach(id=>{{const el=document.getElementById(id);if(el){{el.textContent=data.unread_count;el.classList.remove('hidden');el.setAttribute('aria-label',data.unread_count+' unread updates');}}}});}}).catch(()=>{{}});
         function openPortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.remove('hidden'); document.body.style.overflow='hidden'; activePortalModal=id; const panel=modal.querySelector('[tabindex]'); if(panel) panel.focus(); }}
         function closePortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.add('hidden'); document.body.style.overflow=''; if(activePortalModal===id) activePortalModal=null; }}
         function closeOnBackdrop(event,id) {{ if(event.target===event.currentTarget) closePortalModal(id); }}

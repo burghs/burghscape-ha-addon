@@ -2,7 +2,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, Text,
-    ForeignKey, Enum as SQLEnum, JSON
+    ForeignKey, Enum as SQLEnum, JSON, UniqueConstraint, Index
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -45,6 +45,7 @@ class Client(Base):
     backups = relationship("Backup", back_populates="client", cascade="all, delete-orphan")
     tokens = relationship("SubscriptionToken", back_populates="client", cascade="all, delete-orphan")
     portal_users = relationship("ClientUser", back_populates="client", cascade="all, delete-orphan")
+    campaign_targets = relationship("CampaignTarget", back_populates="client", cascade="all, delete-orphan")
 
     @property
     def hours_remaining(self) -> float:
@@ -66,6 +67,7 @@ class ClientUser(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     client = relationship("Client", back_populates="portal_users")
+    campaign_reads = relationship("CampaignReadState", back_populates="user", cascade="all, delete-orphan")
 class HomeAssistantInstance(Base):
     __tablename__ = "ha_instances"
     id = Column(Integer, primary_key=True, index=True)
@@ -170,3 +172,48 @@ class SubscriptionToken(Base):
     expires_at = Column(DateTime)
     last_used = Column(DateTime)
     client = relationship("Client", back_populates="tokens")
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    id = Column(Integer, primary_key=True, index=True)
+    internal_name = Column(String(255), nullable=False, unique=True)
+    title = Column(String(255), nullable=False)
+    subtitle = Column(String(500))
+    campaign_type = Column(String(50), nullable=False, index=True)
+    body_content = Column(Text, nullable=False)
+    price_text = Column(String(100))
+    regular_price_text = Column(String(100))
+    call_to_action_label = Column(String(100))
+    image_reference = Column(String(255))
+    image_content_type = Column(String(50))
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    priority = Column(Integer, nullable=False, default=0, index=True)
+    starts_at = Column(DateTime)
+    ends_at = Column(DateTime)
+    published_at = Column(DateTime)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(String(255), nullable=False)
+    updated_by = Column(String(255), nullable=False)
+    target_all_clients = Column(Boolean, nullable=False, default=True)
+    archived_at = Column(DateTime)
+    targets = relationship("CampaignTarget", back_populates="campaign", cascade="all, delete-orphan")
+    read_states = relationship("CampaignReadState", back_populates="campaign", cascade="all, delete-orphan")
+    __table_args__ = (Index("ix_campaign_visibility", "status", "starts_at", "ends_at", "priority"),)
+
+class CampaignTarget(Base):
+    __tablename__ = "campaign_targets"
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True)
+    campaign = relationship("Campaign", back_populates="targets")
+    client = relationship("Client", back_populates="campaign_targets")
+
+class CampaignReadState(Base):
+    __tablename__ = "campaign_read_states"
+    id = Column(Integer, primary_key=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    read_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    campaign = relationship("Campaign", back_populates="read_states")
+    user = relationship("ClientUser", back_populates="campaign_reads")
+    __table_args__ = (UniqueConstraint("campaign_id", "client_user_id", name="uq_campaign_read_user"),)

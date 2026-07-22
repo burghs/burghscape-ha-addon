@@ -1,5 +1,15 @@
 # Platform Changelog
 
+## 2026-07-22 — RC1.4.1 Campaign Framework
+
+- Added administrator-managed campaigns with draft, published, unpublished, archived, preview, selected-client targeting, priority, effective dates, and draft-only confirmed deletion workflows.
+- Added announcement, promotion, new service, maintenance notice, tip, featured project, and important notice campaign types using plain-text content and theme-compatible presentation.
+- Added persistent per-client-user read state, server-calculated unread counts, and an authenticated Client Portal “What’s New” section that excludes draft, archived, future, expired, and untargeted campaigns.
+- Added optional JPEG, PNG, and WebP campaign media with configurable `CAMPAIGN_MEDIA_ROOT` and `CAMPAIGN_MAX_IMAGE_BYTES`, MIME/extension/signature/size validation, generated filenames, and controlled replacement/removal.
+- Added additive migration `backend/migrations/20260722_create_campaign_framework.sql` for campaigns, client targeting, read state, indexes, and foreign keys.
+- Campaign media defaults to `/backups/campaign-media` inside the backend, using the existing persistent `/backups` mount; the maximum image size defaults to 5 MiB and both values are environment-configurable.
+- First-login onboarding, login promotional popups, campaign-interest support tickets, subscription change/cancellation requests, and campaign analytics beyond read/unread state remain deferred.
+
 ## 2026-07-21 — RC1.3.2 backup storage monitoring and safe cleanup
 
 - Added authenticated backup-storage capacity, filesystem-used, available, percentage-used, and managed/platform file-usage monitoring using the configured backup roots.

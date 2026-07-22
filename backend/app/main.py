@@ -15,7 +15,7 @@ from sqlalchemy import select, func, update
 
 from config import get_settings
 from database import init_db, engine, async_session
-from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding
+from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns
 from middleware import AdminAuthMiddleware
 from admin_auth import admin_auth_router
 from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken
@@ -253,6 +253,7 @@ app.include_router(tunnels.router, prefix="/api/tunnels", tags=["Tunnels"])
 app.include_router(portal_users.router, prefix="/api/portal", tags=["Portal"])
 app.include_router(portal.router, tags=["Portal"])
 app.include_router(branding.router, prefix="/api", tags=["Branding"])
+app.include_router(campaigns.router, tags=["Campaigns"])
 
 
 # Static files for brand assets

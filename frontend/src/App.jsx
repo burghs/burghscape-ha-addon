@@ -9,6 +9,7 @@ import Instances from "./pages/Instances";
 import Backups from "./pages/Backups";
 import Support from "./pages/Support";
 import Settings from "./pages/Settings";
+import Campaigns from "./pages/Campaigns";
 
 function isClientPortal() {
   return window.location.hostname.startsWith("client.");
@@ -55,6 +56,7 @@ function AppRoutes() {
           <Route path="instances" element={<Instances />} />
           <Route path="backups" element={<Backups />} />
           <Route path="support" element={<Support />} />
+          <Route path="campaigns" element={<Campaigns />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
