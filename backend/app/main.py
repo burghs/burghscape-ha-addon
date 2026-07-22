@@ -234,6 +234,7 @@ async def health_check():
         "status": "healthy",
         "service": settings.APP_NAME,
         "version": settings.APP_VERSION,
+        "commit": os.environ.get("BUILD_COMMIT", "unknown"),
         "database": database_status,
         "storage": "available" if storage_available else "unavailable",
         "email": "configured" if email_configured else "not_configured",
