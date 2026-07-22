@@ -1,0 +1,18 @@
+BEGIN;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS call_to_action_type VARCHAR(50) NOT NULL DEFAULT 'none';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS popup_behavior VARCHAR(30) NOT NULL DEFAULT 'next_login';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS reminder_delay_minutes INTEGER;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delivery_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS last_resent_at TIMESTAMP;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS last_resent_by VARCHAR(255);
+UPDATE campaigns SET call_to_action_type='custom' WHERE call_to_action_url IS NOT NULL AND call_to_action_url <> '' AND call_to_action_type='none';
+ALTER TABLE campaign_popup_events ADD COLUMN IF NOT EXISTS delivery_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE campaign_popup_events ADD COLUMN IF NOT EXISTS occurrence_id VARCHAR(64);
+ALTER TABLE campaign_read_states ADD COLUMN IF NOT EXISTS delivery_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE campaign_read_states DROP CONSTRAINT IF EXISTS uq_campaign_read_user;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=$q$uq_campaign_read_user_revision$q$) THEN ALTER TABLE campaign_read_states ADD CONSTRAINT uq_campaign_read_user_revision UNIQUE(campaign_id,client_user_id,delivery_revision); END IF; END $$;
+CREATE TABLE IF NOT EXISTS campaign_popup_states (id SERIAL PRIMARY KEY,campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,client_user_id INTEGER NOT NULL REFERENCES client_users(id) ON DELETE CASCADE,delivery_revision INTEGER NOT NULL,last_displayed_at TIMESTAMP,snoozed_until TIMESTAMP,snoozed_session_hash VARCHAR(64),acknowledged_at TIMESTAMP,acknowledgment_type VARCHAR(30),updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT uq_campaign_popup_state_revision UNIQUE(campaign_id,client_user_id,delivery_revision));
+CREATE INDEX IF NOT EXISTS ix_campaign_popup_states_campaign ON campaign_popup_states(campaign_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_popup_event_occurrence ON campaign_popup_events(campaign_id,client_user_id,delivery_revision,event_type,occurrence_id) WHERE occurrence_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_campaign_popup_states_user ON campaign_popup_states(client_user_id);
+COMMIT;

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from admin_auth import get_current_admin
 from config import get_settings
 from database import get_db
-from models import Campaign, CampaignReadState, CampaignTarget, Client, ClientStatus, ClientUser
+from models import Campaign, CampaignPopupState, CampaignReadState, CampaignTarget, Client, ClientStatus, ClientUser
 from routers.portal_state import portal_sessions
 
 router = APIRouter()
@@ -28,6 +28,8 @@ TYPES = {
     "featured_project": "Featured Project", "important_notice": "Important Notice",
 }
 STATUSES = {"draft", "unpublished", "published", "archived"}
+POPUP_BEHAVIORS = {"until_acknowledged", "next_login", "after_delay", "once"}
+CTA_TYPES = {"none", "details", "portal", "support", "whatsapp", "email", "phone", "external", "custom"}
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 IMAGE_SIGNATURES = {
     "image/jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
@@ -46,8 +48,11 @@ class CampaignInput(BaseModel):
     regular_price_text: Optional[str] = Field(default=None, max_length=100)
     call_to_action_label: Optional[str] = Field(default=None, max_length=100)
     call_to_action_url: Optional[str] = Field(default=None, max_length=1000)
+    call_to_action_type: str = "none"
     popup_enabled: bool = False
     popup_summary: Optional[str] = Field(default=None, max_length=500)
+    popup_behavior: str = "next_login"
+    reminder_delay_minutes: Optional[int] = Field(default=None, ge=60, le=4320)
     priority: int = Field(default=0, ge=-1000, le=1000)
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
@@ -77,13 +82,19 @@ def valid_action_url(value: Optional[str]) -> bool:
         return False
     parsed = urlparse(value)
     if not parsed.scheme and not parsed.netloc:
-        return parsed.path in {"/portal", "/portal/whats-new", "/portal/getting-started"}
-    return parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
+        return parsed.path in {"/portal", "/portal/whats-new", "/portal/getting-started"} or (parsed.path == "/portal" and parsed.fragment in {"support","backups","remote-access"})
+    return (parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password) or (parsed.scheme == "mailto" and bool(parsed.path) and "@" in parsed.path) or (parsed.scheme == "tel" and bool(parsed.path) and all(ch in "+0123456789- ()" for ch in parsed.path))
 
 
 def validate_input(data: CampaignInput, publishing: bool = False, server_now: Optional[datetime] = None):
     if data.campaign_type not in TYPES:
         raise HTTPException(422, "Invalid campaign type")
+    if data.popup_behavior not in POPUP_BEHAVIORS:
+        raise HTTPException(422, "Invalid popup behavior")
+    if data.call_to_action_type not in CTA_TYPES:
+        raise HTTPException(422, "Invalid call-to-action type")
+    if data.popup_behavior == "after_delay" and not data.reminder_delay_minutes:
+        raise HTTPException(422, "Delayed reminders require an interval")
     if data.starts_at and data.ends_at and data.ends_at <= data.starts_at:
         raise HTTPException(422, "End date must be after start date")
     if not data.target_all_clients and not data.target_client_ids:
@@ -118,7 +129,10 @@ def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
         "regular_price_text": campaign.regular_price_text,
         "call_to_action_label": campaign.call_to_action_label,
         "call_to_action_url": campaign.call_to_action_url,
+        "call_to_action_type": campaign.call_to_action_type,
         "popup_enabled": campaign.popup_enabled, "popup_summary": campaign.popup_summary,
+        "popup_behavior": campaign.popup_behavior, "reminder_delay_minutes": campaign.reminder_delay_minutes,
+        "delivery_revision": campaign.delivery_revision, "last_resent_at": api_datetime(campaign.last_resent_at), "last_resent_by": campaign.last_resent_by,
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/admin/campaigns/{campaign.id}/image-file" if campaign.image_reference else None,
         "status": campaign.status, "delivery_status": delivery_status(campaign), "priority": campaign.priority,
@@ -276,6 +290,9 @@ async def lifecycle(campaign_id, action, admin, db):
     campaign.updated_by = admin["username"]
     campaign.updated_at = now_utc()
     await db.commit()
+    if action == "publish":
+        from routers.campaign_notifications import notify_campaign_available
+        await notify_campaign_available()
     return admin_payload(campaign, await target_ids(db, campaign.id))
 
 
@@ -292,6 +309,21 @@ async def unpublish(campaign_id: int, admin: dict = Depends(get_current_admin), 
 @router.post("/api/admin/campaigns/{campaign_id}/archive")
 async def archive(campaign_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     return await lifecycle(campaign_id, "archive", admin, db)
+
+
+@router.post("/api/admin/campaigns/{campaign_id}/resend-popup")
+async def resend_popup(campaign_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    campaign = await campaign_or_404(db, campaign_id)
+    if campaign.status != "published" or not campaign.popup_enabled:
+        raise HTTPException(409, "Only published popup campaigns can be resent")
+    campaign.delivery_revision += 1
+    campaign.last_resent_at = now_utc()
+    campaign.last_resent_by = admin["username"]
+    campaign.updated_at = now_utc()
+    await db.commit()
+    from routers.campaign_notifications import notify_campaign_available
+    await notify_campaign_available()
+    return admin_payload(campaign, await target_ids(db, campaign.id))
 
 
 def media_root() -> Path:
@@ -407,9 +439,9 @@ async def visible_campaign(db, campaign_id, user):
 async def portal_campaigns(request: Request, db: AsyncSession = Depends(get_db)):
     user = await portal_user(request, db)
     campaigns = (await db.execute(select(Campaign).where(visible_clause(user.client_id, now_utc())).order_by(Campaign.priority.desc(), Campaign.published_at.desc()))).scalars().all()
-    read_ids = set((await db.execute(select(CampaignReadState.campaign_id).where(CampaignReadState.client_user_id == user.id))).scalars().all())
-    return {"campaigns": [client_payload(c, c.id in read_ids) for c in campaigns],
-            "unread_count": sum(1 for c in campaigns if c.id not in read_ids)}
+    read_ids = set((await db.execute(select(CampaignReadState.campaign_id, CampaignReadState.delivery_revision).where(CampaignReadState.client_user_id == user.id))).all())
+    return {"campaigns": [client_payload(c, (c.id, c.delivery_revision) in read_ids) for c in campaigns],
+            "unread_count": sum(1 for c in campaigns if (c.id, c.delivery_revision) not in read_ids)}
 
 
 @router.get("/api/portal/campaigns/unread-count")
@@ -424,7 +456,7 @@ async def portal_campaign(campaign_id: int, request: Request, db: AsyncSession =
     campaign = await visible_campaign(db, campaign_id, user)
     if not campaign:
         raise HTTPException(404, "Campaign not found")
-    read = (await db.execute(select(CampaignReadState.id).where(CampaignReadState.campaign_id == campaign.id, CampaignReadState.client_user_id == user.id))).scalar()
+    read = (await db.execute(select(CampaignReadState.id).where(CampaignReadState.campaign_id == campaign.id, CampaignReadState.client_user_id == user.id, CampaignReadState.delivery_revision == campaign.delivery_revision))).scalar()
     return client_payload(campaign, bool(read))
 
 
@@ -434,10 +466,15 @@ async def mark_read(campaign_id: int, request: Request, db: AsyncSession = Depen
     campaign = await visible_campaign(db, campaign_id, user)
     if not campaign:
         raise HTTPException(404, "Campaign not found")
-    existing = (await db.execute(select(CampaignReadState).where(CampaignReadState.campaign_id == campaign.id, CampaignReadState.client_user_id == user.id))).scalars().first()
+    existing = (await db.execute(select(CampaignReadState).where(CampaignReadState.campaign_id == campaign.id, CampaignReadState.client_user_id == user.id, CampaignReadState.delivery_revision == campaign.delivery_revision))).scalars().first()
     if not existing:
-        db.add(CampaignReadState(campaign_id=campaign.id, client_user_id=user.id, read_at=now_utc()))
-        await db.commit()
+        db.add(CampaignReadState(campaign_id=campaign.id, client_user_id=user.id, delivery_revision=campaign.delivery_revision, read_at=now_utc()))
+    if campaign.popup_enabled:
+        popup_state=(await db.execute(select(CampaignPopupState).where(CampaignPopupState.campaign_id==campaign.id,CampaignPopupState.client_user_id==user.id,CampaignPopupState.delivery_revision==campaign.delivery_revision))).scalars().first()
+        if not popup_state:
+            popup_state=CampaignPopupState(campaign_id=campaign.id,client_user_id=user.id,delivery_revision=campaign.delivery_revision);db.add(popup_state)
+        popup_state.acknowledged_at=now_utc();popup_state.acknowledgment_type="opened"
+    await db.commit()
     return {"status": "read"}
 
 

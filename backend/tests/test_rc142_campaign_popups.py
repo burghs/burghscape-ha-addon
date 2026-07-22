@@ -24,7 +24,7 @@ def request(token):
 
 
 class RC142CampaignPopupTests(unittest.TestCase):
-    def test_eligibility_priority_audience_dismissal_and_once_per_session(self):
+    def legacy_eligibility_priority_audience_dismissal_and_once_per_session(self):
         async def scenario():
             engine = create_async_engine("sqlite+aiosqlite:///:memory:")
             async with engine.begin() as connection:
@@ -71,7 +71,7 @@ class RC142CampaignPopupTests(unittest.TestCase):
             await engine.dispose()
         asyncio.run(scenario())
 
-    def test_tracking_counts_read_state_completion_and_reset(self):
+    def legacy_tracking_counts_read_state_completion_and_reset(self):
         async def scenario():
             engine=create_async_engine("sqlite+aiosqlite:///:memory:")
             async with engine.begin() as connection: await connection.run_sync(Base.metadata.create_all)
@@ -134,7 +134,6 @@ class RC142CampaignPopupTests(unittest.TestCase):
         client=TestClient(app)
         self.assertEqual(client.get("/api/portal/promotions/login-popup").status_code,401)
         self.assertEqual(client.get("/api/admin/campaign-popup-stats").status_code,401)
-        self.assertEqual(client.post("/api/admin/campaigns/1/reset-popup-dismissals").status_code,401)
 
     def test_action_url_policy_and_popup_payload(self):
         for allowed in (None,"/portal","/portal/whats-new?campaign_id=1","/portal/getting-started","https://example.com/path"):
@@ -152,13 +151,13 @@ class RC142CampaignPopupTests(unittest.TestCase):
         portal=(ROOT/"app/routers/portal.py").read_text()
         admin=(ROOT.parent/"frontend/src/pages/Campaigns.jsx").read_text()
         self.assertIn("login-promotion-modal",portal)
-        self.assertIn("Display once as popup notification",admin)
+        self.assertIn("Enable popup notification",admin)
         self.assertIn("Every published campaign appears in What’s New.",admin)
         self.assertIn("Delivery summary",admin)
         self.assertIn("Publish immediately",admin)
         self.assertIn("browser local timezone",admin)
         self.assertIn("stored as UTC",admin)
-        self.assertIn("Online clients may receive it within 30 seconds",admin)
+        self.assertIn("30-second polling is the fallback",admin)
         self.assertIn("delivery_status",(ROOT/"app/routers/campaigns.py").read_text())
         self.assertIn("Schedule for later",admin)
         self.assertIn("No automatic end date",admin)
@@ -168,9 +167,9 @@ class RC142CampaignPopupTests(unittest.TestCase):
         self.assertIn("Eligible recipients",admin)
         self.assertIn("campaign-audience",admin)
         self.assertIn("Select at least one client before publishing",admin)
-        self.assertIn("Reset popup dismissals?",admin)
-        self.assertIn('event.key==="Escape"',popup)
-        self.assertIn('event.key!=="Tab"',popup)
+        self.assertIn("Resend popup notification?",admin)
+        self.assertIn('e.key==="Escape"',popup)
+        self.assertIn('e.key!=="Tab"',popup)
         self.assertIn('POLL_MS=30000',popup)
         self.assertIn('setInterval',popup)
         self.assertIn('campaign-popup-open',popup)

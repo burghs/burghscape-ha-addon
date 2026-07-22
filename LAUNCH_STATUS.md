@@ -20,3 +20,15 @@
 | Clean Home Assistant deployment validation | IN PROGRESS |
 | First real-client validation and sign-off | BLOCKED |
 | v1.0 release | BLOCKED |
+
+## Campaign notification engagement upgrade
+
+- COMPLETE — revision-scoped popup lifecycle and historical analytics preservation
+- COMPLETE — temporary close versus permanent dismissal semantics
+- COMPLETE — next-login/delayed/until-acknowledged/show-once reminder policies
+- COMPLETE — authenticated SSE availability notification with 30-second polling fallback
+- COMPLETE — intentional resend action with administrator/time audit fields
+- COMPLETE — revision-aware unread/read state
+- COMPLETE — responsive, keyboard-accessible Remind me later and Dismiss actions
+- COMPLETE — migration included in backup-first documented deployment
+- IN PROGRESS — final real-client browser sign-off across supported Home Assistant webviews

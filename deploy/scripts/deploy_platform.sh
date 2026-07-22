@@ -15,6 +15,7 @@ echo "Deploying Platform $platform_version at $platform_commit"
 docker exec mybeacon-db pg_dump -U burghscape -d burghscape > "$backup_file"
 docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260722_add_versioned_onboarding.sql"
 docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260722_clear_pre_overlay_popup_impressions.sql"
+docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260722_campaign_notification_lifecycle.sql"
 git archive HEAD:backend | docker build --build-arg "APP_VERSION=$platform_version" --build-arg "VCS_REF=$platform_commit" -t "burghscape-backend:$platform_commit" -
 git archive HEAD:frontend | docker build --build-arg "APP_VERSION=$platform_version" --build-arg "VCS_REF=$platform_commit" -t "burghscape-frontend:$platform_commit" -
 docker compose -f "$compose_base" -f "$compose_release" up -d --no-build --force-recreate backend frontend

@@ -203,8 +203,14 @@ class Campaign(Base):
     regular_price_text = Column(String(100))
     call_to_action_label = Column(String(100))
     call_to_action_url = Column(String(1000))
+    call_to_action_type = Column(String(50), nullable=False, default="none")
     popup_enabled = Column(Boolean, nullable=False, default=False)
     popup_summary = Column(String(500))
+    popup_behavior = Column(String(30), nullable=False, default="next_login")
+    reminder_delay_minutes = Column(Integer)
+    delivery_revision = Column(Integer, nullable=False, default=1)
+    last_resent_at = Column(DateTime)
+    last_resent_by = Column(String(255))
     image_reference = Column(String(255))
     image_content_type = Column(String(50))
     status = Column(String(20), nullable=False, default="draft", index=True)
@@ -235,10 +241,11 @@ class CampaignReadState(Base):
     id = Column(Integer, primary_key=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    delivery_revision = Column(Integer, nullable=False, default=1)
     read_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     campaign = relationship("Campaign", back_populates="read_states")
     user = relationship("ClientUser", back_populates="campaign_reads")
-    __table_args__ = (UniqueConstraint("campaign_id", "client_user_id", name="uq_campaign_read_user"),)
+    __table_args__ = (UniqueConstraint("campaign_id", "client_user_id", "delivery_revision", name="uq_campaign_read_user_revision"),)
 
 
 class CampaignPopupEvent(Base):
@@ -247,7 +254,24 @@ class CampaignPopupEvent(Base):
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type = Column(String(30), nullable=False, index=True)
+    delivery_revision = Column(Integer, nullable=False, default=1)
+    occurrence_id = Column(String(64))
     occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     campaign = relationship("Campaign", back_populates="popup_events")
     user = relationship("ClientUser", back_populates="campaign_popup_events")
     __table_args__ = (Index("ix_campaign_popup_user_event", "client_user_id", "campaign_id", "event_type"),)
+
+
+class CampaignPopupState(Base):
+    __tablename__ = "campaign_popup_states"
+    id = Column(Integer, primary_key=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    delivery_revision = Column(Integer, nullable=False)
+    last_displayed_at = Column(DateTime)
+    snoozed_until = Column(DateTime)
+    snoozed_session_hash = Column(String(64))
+    acknowledged_at = Column(DateTime)
+    acknowledgment_type = Column(String(30))
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("campaign_id", "client_user_id", "delivery_revision", name="uq_campaign_popup_state_revision"),)

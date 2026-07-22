@@ -128,3 +128,7 @@ Implemented campaign functionality includes admin lifecycle, targeting, client W
 - Compose project: one project named `burghscape`, eight running containers.
 - Automated release workflows/tags: none.
 - Previous Platform runtime: RC1.4.2-era worker because migration/restart had not occurred.
+
+## Campaign notification lifecycle (RC1.4.3 launch consolidation)
+
+Published eligible campaigns always use What’s New; popup notification is optional. Popup availability uses an authenticated SSE wake-up for normal 2–5 second online discovery and a 30-second poll/visibility check as recovery. Display impressions are analytics, temporary close is a snooze, dismissal/action are acknowledgements, and deliberate resend creates a new delivery revision without deleting history. See `CAMPAIGN_NOTIFICATION_BEHAVIOUR.md` for the authoritative state and analytics contract.
