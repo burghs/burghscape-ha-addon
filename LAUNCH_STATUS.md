@@ -10,7 +10,7 @@
 | RC1.4.3 frontend deployment | COMPLETE |
 | Authentication and client isolation | COMPLETE |
 | Campaign lifecycle and What’s New | COMPLETE |
-| Login popup engine, 30-second online discovery, responsive overlay, stale-impression repair, and metrics | COMPLETE |
+| Login popup engine, verified no-refresh discovery, 30-second polling, responsive overlay, and metrics | COMPLETE |
 | Onboarding start/resume/skip/complete/replay | COMPLETE |
 | Existing-user onboarding backfill | COMPLETE |
 | Theme and responsive component behavior | COMPLETE |

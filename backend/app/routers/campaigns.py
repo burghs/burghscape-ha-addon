@@ -81,7 +81,7 @@ def valid_action_url(value: Optional[str]) -> bool:
     return parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
 
 
-def validate_input(data: CampaignInput, publishing: bool = False):
+def validate_input(data: CampaignInput, publishing: bool = False, server_now: Optional[datetime] = None):
     if data.campaign_type not in TYPES:
         raise HTTPException(422, "Invalid campaign type")
     if data.starts_at and data.ends_at and data.ends_at <= data.starts_at:
@@ -92,11 +92,21 @@ def validate_input(data: CampaignInput, publishing: bool = False):
         raise HTTPException(422, "Action URL must be an approved portal route or valid HTTPS URL")
     if publishing and not data.title.strip():
         raise HTTPException(422, "Campaign title is required")
+    if publishing and data.ends_at and data.ends_at <= (server_now or now_utc()):
+        raise HTTPException(422, "Campaign end date must be in the future")
 
 
 async def target_ids(db: AsyncSession, campaign_id: int) -> list[int]:
     return list((await db.execute(select(CampaignTarget.client_id).where(CampaignTarget.campaign_id == campaign_id))).scalars().all())
 
+
+def delivery_status(campaign: Campaign) -> str:
+    now = now_utc()
+    if campaign.status == "archived": return "archived"
+    if campaign.status != "published": return "draft"
+    if campaign.starts_at and campaign.starts_at > now: return "scheduled"
+    if campaign.ends_at and campaign.ends_at <= now: return "expired"
+    return "live"
 
 def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
     return {
@@ -110,7 +120,7 @@ def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
         "popup_enabled": campaign.popup_enabled, "popup_summary": campaign.popup_summary,
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/admin/campaigns/{campaign.id}/image-file" if campaign.image_reference else None,
-        "status": campaign.status, "priority": campaign.priority,
+        "status": campaign.status, "delivery_status": delivery_status(campaign), "priority": campaign.priority,
         "starts_at": api_datetime(campaign.starts_at),
         "ends_at": api_datetime(campaign.ends_at),
         "published_at": campaign.published_at.isoformat() if campaign.published_at else None,
@@ -247,11 +257,12 @@ async def update_campaign(campaign_id: int, data: CampaignInput, admin: dict = D
 async def lifecycle(campaign_id, action, admin, db):
     campaign = await campaign_or_404(db, campaign_id)
     if action == "publish":
+        publish_time = now_utc()
         data = CampaignInput(**{k: getattr(campaign, k) for k in CampaignInput.model_fields if k != "target_client_ids"},
                              target_client_ids=await target_ids(db, campaign.id))
-        validate_input(data, True)
+        validate_input(data, True, publish_time)
         campaign.status = "published"
-        campaign.published_at = now_utc()
+        campaign.published_at = publish_time
         campaign.archived_at = None
     elif action == "unpublish":
         if campaign.status != "published":
