@@ -69,6 +69,23 @@ class ClientUser(Base):
     client = relationship("Client", back_populates="portal_users")
     campaign_reads = relationship("CampaignReadState", back_populates="user", cascade="all, delete-orphan")
     campaign_popup_events = relationship("CampaignPopupEvent", back_populates="user", cascade="all, delete-orphan")
+    onboarding_states = relationship("ClientOnboardingState", back_populates="user", cascade="all, delete-orphan")
+
+class ClientOnboardingState(Base):
+    __tablename__ = "client_onboarding_states"
+    id = Column(Integer, primary_key=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    onboarding_version = Column(String(30), nullable=False)
+    status = Column(String(20), nullable=False, default="not_started")
+    current_step = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    skipped_at = Column(DateTime)
+    last_replay_at = Column(DateTime)
+    replay_active = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = relationship("ClientUser", back_populates="onboarding_states")
+    __table_args__ = (UniqueConstraint("client_user_id", "onboarding_version", name="uq_client_onboarding_user_version"), Index("ix_client_onboarding_status", "onboarding_version", "status"),)
 class HomeAssistantInstance(Base):
     __tablename__ = "ha_instances"
     id = Column(Integer, primary_key=True, index=True)

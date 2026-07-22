@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     APP_NAME: str = "Burghscape Home Cloud"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "1.4.3-rc"
     DEBUG: bool = False
     
     DATABASE_URL: str = "sqlite+aiosqlite:///./burghscape.db"

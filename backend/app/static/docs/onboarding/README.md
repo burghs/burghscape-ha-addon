@@ -1,23 +1,36 @@
-# Burghscape Home Cloud Onboarding Screenshots
+# Client onboarding (RC1.4.3)
 
-Place customer onboarding screenshots in this directory.
+## Status and architecture
 
-The authenticated Client Portal Getting Started page automatically checks:
+RC1.4.3 is the final planned feature release before launch validation. The Client Portal remains server-rendered. `ClientOnboardingState` is the authoritative per-user/per-version record; browser storage is not used by the tour. The coordinator in `/static/onboarding.js` owns loading, step navigation, focus, target fallback, completion, skip, replay, and promotion readiness.
 
-`/static/docs/onboarding/<filename>`
+The current version is `rc1.4.3`. States are `not_started`, `in_progress`, `completed`, and `skipped`, with current step and start/completion/skip/replay timestamps. Completion history remains intact during replay.
 
-If a matching image exists, it is displayed. If it does not exist, the page keeps the branded placeholder card. Do not change code when replacing placeholders with real screenshots.
+## API
 
-Use these filenames and capture targets:
+- `GET /api/portal/onboarding` — current user state and `should_start`.
+- `POST /api/portal/onboarding/start` — idempotently starts initial onboarding.
+- `PATCH /api/portal/onboarding/step` with `{"current_step": 0..7}` — persists progress.
+- `POST /api/portal/onboarding/skip` — skips initial onboarding or ends a replay.
+- `POST /api/portal/onboarding/complete` — completes initial onboarding or a replay.
+- `POST /api/portal/onboarding/replay` — preserves terminal history and records replay time.
 
-- `step1-client-portal-login.png`: Burghscape Client Portal login with the shield logo, email/password fields, and Sign In button.
-- `step2-generate-token.png`: Home Assistant user profile, Security, Long-lived access tokens, and Create token.
-- `step3-subscription-token.png`: Client Portal dashboard, Your Burghscape Details, masked Subscription Token, Show and Copy controls.
-- `step4-install-agent.png`: Home Assistant Settings, Apps, Install app, three-dot menu, Repositories, + Add, and Burghscape Agent listing.
-- `step5-agent-config.png`: Burghscape Agent configuration showing platform_url, subscription_token, instance_name, heartbeat_interval, monitoring toggles, report_days, ha_token, and Save.
-- `step6-start-agent.png`: Burghscape Agent Start on boot, Start button, and log panel.
-- `step7-remote-url-working.png`: Home Assistant loaded from the customer Remote URL.
-- `step8-android-companion-app.png`: Android Companion App manual server address, Remote URL, device name, notifications, Location, and Nearby devices prompts.
-- `step9-ios-companion-app.png`: iPhone/iPad Companion App manual server address, Remote URL, device name, notifications, location permission prompts, and Critical Notifications prompt.
+All endpoints use the authenticated portal session and derive the user server-side; callers cannot supply a client or user identifier.
 
-Replace or add screenshots here without changing code.
+## Upgrade and fresh installation
+
+Apply campaign migrations first, then `backend/migrations/20260722_add_versioned_onboarding.sql`. Its insert marks every user already present at migration time as skipped for this version. This deterministic backfill prevents existing clients being forced through onboarding. Users created after migration have no current-version row and start automatically after login/password change. `Base.metadata.create_all` creates the table on a fresh database; the SQL migration must still be recorded/applied by the deployment workflow.
+
+## Promotion coordination
+
+The portal loads onboarding state before requesting a login promotion. The backend also suppresses promotion selection while the current record is absent, active, or replaying and does not consume the once-per-session evaluation marker. No displayed/dismissed event is written. Skip or completion emits readiness and normal campaign targeting/dismissal rules resume.
+
+## Client experience and accessibility
+
+The eight-step tour covers portal home, Home Assistant status, backups, support, What’s New, account/theme controls, and Getting Started. Missing or mobile-hidden targets use a centered explanation and never block progress. The dialog traps focus, restores prior focus, locks background input, supports keyboard controls, uses visible focus, and honors reduced motion. Escape focuses Skip so it cannot silently complete or discard progress.
+
+The Getting Started page contains installation guidance, token terminology, remote URL/mobile setup, support guidance, and the replay action. Screenshot assets may be added to this directory using the existing documented filenames; missing images retain accessible explanatory cards.
+
+## Testing
+
+Run `cd backend && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p "test_*.py"`, `cd frontend && npm run build`, and `cd frontend && node --test tests/*.test.mjs`. Full live validation follows `LAUNCH_VALIDATION_RC143.md`.

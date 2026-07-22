@@ -83,6 +83,9 @@ PORTAL_HTML = """<!DOCTYPE html>
         .metric-tile {{ border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.035); border-radius:12px; padding:12px; min-width:0; }}
         .touch-action {{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; }}
         .focusable:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {{ outline:2px solid #a78bfa; outline-offset:2px; }}
+        body.onboarding-active > *:not(#onboarding-modal):not(script) {{ pointer-events:none; }}
+        .onboarding-spotlight {{ position:relative; z-index:60; outline:3px solid #a78bfa; outline-offset:5px; }}
+        @media (prefers-reduced-motion: reduce) {{ .onboarding-spotlight, .progress-fill {{ transition:none !important; scroll-behavior:auto !important; }} }}
         .portal-modal {{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.78); }}
         .portal-modal.hidden {{ display:none; }}
         .modal-panel {{ width:min(100%,760px); max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px; }}
@@ -101,8 +104,8 @@ PORTAL_HTML = """<!DOCTYPE html>
                 <span class="hidden lg:inline text-sm text-gray-400 truncate">{client_name}</span>
             </div>
             <div class="hidden sm:flex shrink-0 items-center gap-4 text-sm">
-                <span class="text-gray-400">{user_name}</span><a href="/portal/whats-new" class="nav-link text-gray-400 hover:text-purple-300">What’s New <span id="campaign-unread-desktop" class="hidden badge badge-primary ml-1"></span></a><a href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
-                <button type="button" onclick="toggleAccountPanel()" class="nav-link text-gray-400 hover:text-purple-300">Account</button><a href="/portal/logout" class="nav-link text-gray-400 hover:text-purple-300">Logout</a>
+                <span class="text-gray-400">{user_name}</span><a data-onboarding-target="campaigns" href="/portal/whats-new" class="nav-link text-gray-400 hover:text-purple-300">What’s New <span id="campaign-unread-desktop" class="hidden badge badge-primary ml-1"></span></a><a data-onboarding-target="getting-started" href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
+                <button data-onboarding-target="account" type="button" onclick="toggleAccountPanel()" class="nav-link text-gray-400 hover:text-purple-300">Account</button><a href="/portal/logout" class="nav-link text-gray-400 hover:text-purple-300">Logout</a>
             </div>
             <button type="button" class="sm:hidden touch-action border border-white/10 text-white" aria-controls="mobile-nav" aria-expanded="false" onclick="toggleMobileNav(this)">Menu</button>
         </div>
@@ -122,7 +125,7 @@ PORTAL_HTML = """<!DOCTYPE html>
 
     <main class="max-w-7xl mx-auto px-4 py-5 sm:px-6 sm:py-7">
         {onboarding_banner_html}
-        <section class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="instance-heading">
+        <section data-onboarding-target="instance" class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="instance-heading">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0"><div class="flex flex-wrap items-center gap-3"><h1 id="instance-heading" class="text-xl sm:text-2xl font-bold text-white truncate">{instance_name}</h1><span class="inline-flex items-center gap-2 text-sm {online_text_class}"><span class="status-dot {online_dot_class}"></span>{online_status}</span></div>
                     <div class="mt-4 grid grid-cols-3 gap-3 text-center sm:text-left"><div><strong class="block text-xl text-white">{entity_count}</strong><span class="text-xs text-gray-500">Entities</span></div><div><strong class="block text-xl text-white">{addon_count_display}</strong><span class="text-xs text-gray-500">Add-ons{addon_count_suffix}</span></div><div><strong class="block text-xl text-white">{integration_count}</strong><span class="text-xs text-gray-500">Integrations</span></div></div>
@@ -149,14 +152,14 @@ PORTAL_HTML = """<!DOCTYPE html>
             </section>
         </div>
 
-        <section class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="backup-heading">
+        <section data-onboarding-target="backups" class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="backup-heading">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="backup-heading" class="text-lg font-semibold text-white">Backup Protection</h2><p id="backup-protection-status" class="text-sm text-gray-400 mt-1">Checking protection status…</p></div><span id="managed-backup-state" class="text-xs text-gray-300">Loading</span></div>
             <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Backup method</div><div class="text-white mt-1">On-demand managed backups</div></div><div class="metric-tile"><div class="text-gray-500">Automatic cloud schedule</div><div class="text-white mt-1">Not configured</div></div><div class="metric-tile"><div class="text-gray-500">Retention policy</div><div class="text-white mt-1">Not configured</div></div></div>
             <div class="mt-6"><div class="flex items-center justify-between gap-3"><h3 class="font-semibold text-white">Managed backup history</h3><span id="managed-backup-count" class="text-xs text-gray-500"></span></div><div id="managed-backup-list" data-instance="{instance_name}" class="mt-2 text-sm"><p class="text-gray-500">Loading backups…</p></div><button id="backup-history-toggle" type="button" class="hidden touch-action mt-2 text-purple-300"></button></div>
             <div class="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 class="font-semibold text-white">Home Assistant local backups</h3>{native_backup_html}</div>
         </section>
 
-        <section class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
+        <section data-onboarding-target="support" class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="support-heading" class="text-lg font-semibold text-white">Account &amp; Support</h2><p class="text-sm text-gray-500 mt-1">Support usage, tickets and diagnostic report</p></div><a href="/portal/getting-started" class="text-sm text-purple-300">Getting Started</a></div>
             <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Included support</div><div class="text-white mt-1">{hours_included}h</div></div><div class="metric-tile"><div class="text-gray-500">Support time logged</div><div class="text-white mt-1">{hours_logged}h</div></div>{support_remaining_html}<div class="metric-tile"><div class="text-gray-500">Potentially billable</div><div class="text-white mt-1">{hours_billable}h</div></div><div class="metric-tile"><div class="text-gray-500">Open tickets</div><div class="text-white mt-1">{open_ticket_count}</div></div><div class="metric-tile"><div class="text-gray-500">Latest ticket</div><div class="text-white mt-1">{latest_ticket_status}</div></div></div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5"><button type="button" onclick="document.getElementById('ticket-form').classList.toggle('hidden')" class="compact-action">New Support Ticket</button><a href="mailto:support@mybeacon.co.za" class="touch-action border border-white/10 text-white">Contact Support</a><a href="/api/portal/report" target="_blank" class="touch-action border border-white/10 text-white">Download Report</a></div>
@@ -278,6 +281,8 @@ PORTAL_HTML = """<!DOCTYPE html>
             else {{ const data = await res.json(); msgEl.textContent = data.detail || 'Failed'; msgEl.className = 'text-sm mt-2 text-red-400'; }}
         }}
     </script>
+    <div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
+    <script src="/static/onboarding.js"></script>
     <div id="login-promotion-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
         <div role="document" tabindex="-1" class="modal-card w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
             <div class="flex justify-end"><button type="button" data-popup-close class="touch-action" aria-label="Dismiss promotion">Close</button></div>
@@ -659,7 +664,7 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
                 </article>
 
                 <article class="stage-panel p-5 sm:p-7" data-stage="9">
-                    <span class="pill mb-4">Finish</span><h2 class="text-4xl font-bold text-white">You’re Connected</h2><p class="mt-3 text-gray-300 leading-relaxed">Your Burghscape Home Cloud setup is complete when the agent is online, remote access opens Home Assistant, and monitoring is active.</p><div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4"><div class="completion-card"><div class="text-sm text-emerald-200">Agent status</div><div class="mt-1 font-semibold text-white">__INSTANCE_STATUS__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Remote access status</div><div class="mt-1 font-semibold text-white">Use __REMOTE_URL__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Monitoring status</div><div class="mt-1 font-semibold text-white">Reports automatically after the agent connects</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Mobile access</div><div class="mt-1 font-semibold text-white">Use the same Remote URL in the app</div></div></div><div class="mt-6 flex flex-wrap gap-3"><a href="/portal" class="btn-primary">Go to Dashboard</a><a href="__REMOTE_URL__" target="_blank" rel="noopener" class="btn-secondary">Open Home Assistant</a></div><div class="callout tip mt-5"><strong>Burghscape Tip</strong>Keep your Burghscape Remote URL bookmarked. It is the address you will use for browser and mobile access.</div>
+                    <span class="pill mb-4">Finish</span><h2 class="text-4xl font-bold text-white">You’re Connected</h2><p class="mt-3 text-gray-300 leading-relaxed">Your Burghscape Home Cloud setup is complete when the agent is online, remote access opens Home Assistant, and monitoring is active.</p><div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4"><div class="completion-card"><div class="text-sm text-emerald-200">Agent status</div><div class="mt-1 font-semibold text-white">__INSTANCE_STATUS__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Remote access status</div><div class="mt-1 font-semibold text-white">Use __REMOTE_URL__</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Monitoring status</div><div class="mt-1 font-semibold text-white">Reports automatically after the agent connects</div></div><div class="completion-card"><div class="text-sm text-emerald-200">Mobile access</div><div class="mt-1 font-semibold text-white">Use the same Remote URL in the app</div></div></div><div class="mt-6 flex flex-wrap gap-3"><a href="/portal" class="btn-primary">Go to Dashboard</a><button type="button" class="btn-secondary" onclick="fetch('/api/portal/onboarding/replay',{method:'POST',credentials:'include'}).then(function(r){if(!r.ok)throw new Error();window.location.href='/portal'})">Replay portal tour</button><a href="__REMOTE_URL__" target="_blank" rel="noopener" class="btn-secondary">Open Home Assistant</a></div><div class="callout tip mt-5"><strong>Burghscape Tip</strong>Keep your Burghscape Remote URL bookmarked. It is the address you will use for browser and mobile access.</div>
                 </article>
 
                 <div class="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

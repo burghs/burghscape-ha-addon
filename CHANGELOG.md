@@ -1,3 +1,12 @@
+## 2026-07-22 — RC1.4.3 versioned client onboarding
+
+- Final planned feature release before launch validation. Added authenticated, per-client-user, versioned server-side onboarding with start, resume, skip, complete, and replay transitions.
+- Added an accessible responsive portal tour, stable spotlight targets, missing-target fallback, Getting Started replay, theme support, focus management, and reduced-motion handling.
+- Added deterministic upgrade backfill: users present when the migration runs are skipped for `rc1.4.3`; users created afterward have no row and receive onboarding.
+- Coordinated login promotions through onboarding readiness and backend eligibility so suppressed campaigns record no impression or dismissal; normal eligibility resumes after skip/completion.
+- Added `backend/migrations/20260722_add_versioned_onboarding.sql`, onboarding API/state tests, release documentation, and a fresh Home Assistant launch-validation runbook.
+- RC1.4.3 is implemented and automated-test validated. Clean deployment validation, a real-client onboarding rehearsal, final fixes, and v1.0 remain pending.
+
 # Platform Changelog
 
 ## 2026-07-22 — RC1.4.2 Login Promotion Popups

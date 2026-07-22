@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
 from database import Base
-from models import Campaign, CampaignPopupEvent, CampaignReadState, CampaignTarget, Client, ClientStatus, ClientUser
+from models import Campaign, CampaignPopupEvent, CampaignReadState, CampaignTarget, Client, ClientStatus, ClientUser, ClientOnboardingState
 from routers import campaign_popups, campaigns
 from routers.portal_state import popup_evaluated_sessions, portal_sessions
 
@@ -37,6 +37,7 @@ class RC142CampaignPopupTests(unittest.TestCase):
                 user_a = ClientUser(client_id=alpha.id,name="Alpha",email="alpha-user@popup.test",password_hash="x",is_active=True)
                 user_b = ClientUser(client_id=beta.id,name="Beta",email="beta-user@popup.test",password_hash="x",is_active=True)
                 db.add_all([user_a,user_b]); await db.flush()
+                db.add_all([ClientOnboardingState(client_user_id=user_a.id,onboarding_version="rc1.4.3",status="skipped"),ClientOnboardingState(client_user_id=user_b.id,onboarding_version="rc1.4.3",status="skipped")]); await db.flush()
                 now=campaigns.now_utc()
                 def item(name, **values):
                     defaults=dict(internal_name=name,title=name,campaign_type="promotion",body_content="Body",status="published",published_at=now,created_by="admin",updated_by="admin",target_all_clients=True,popup_enabled=True,priority=1)
@@ -80,6 +81,7 @@ class RC142CampaignPopupTests(unittest.TestCase):
                 db.add(client);await db.flush()
                 user=ClientUser(client_id=client.id,name="User",email="track-user@popup.test",password_hash="x",is_active=True)
                 db.add(user);await db.flush()
+                db.add(ClientOnboardingState(client_user_id=user.id,onboarding_version="rc1.4.3",status="skipped"));await db.flush()
                 campaign=Campaign(internal_name="tracking",title="Tracking",campaign_type="promotion",body_content="Body",status="published",published_at=campaigns.now_utc(),created_by="admin",updated_by="admin",target_all_clients=True,popup_enabled=True,call_to_action_label="Learn more",call_to_action_url="https://example.com/service")
                 db.add(campaign);await db.commit()
                 token="popup-track";portal_sessions[token]=user.id;req=request(token)

@@ -31,5 +31,5 @@ details.addEventListener("click",async function(){await post("opened");window.lo
 primary.addEventListener("click",async function(){await post("action-clicked");window.location.assign(promotion.call_to_action_url)});
 modal.addEventListener("click",function(event){if(event.target===modal)dismiss()});
 modal.addEventListener("keydown",keydown);
-window.addEventListener("load",function(){window.setTimeout(function(){show().catch(function(){})},150)},{once:true});
+window.addEventListener("load",function(){window.addEventListener("onboarding:ready",function(event){if(!event.detail.active)show().catch(function(){})},{once:true})},{once:true});
 })();

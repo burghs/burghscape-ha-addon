@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from admin_auth import get_current_admin
 from database import get_db
 from models import Campaign, CampaignPopupEvent, CampaignReadState
+from routers.onboarding import current_state
 from routers.campaigns import now_utc, portal_user, visible_campaign, visible_clause
 from routers.portal_state import popup_evaluated_sessions
 
@@ -42,6 +43,9 @@ async def login_popup(request: Request, db: AsyncSession = Depends(get_db)):
     token = request.cookies.get("portal_token", "")
     if not token or token in popup_evaluated_sessions:
         return {"promotion": None}
+    onboarding = await current_state(db, user.id)
+    if onboarding is None or onboarding.status in {"not_started", "in_progress"} or onboarding.replay_active:
+        return {"promotion": None, "suppressed_by_onboarding": True}
     popup_evaluated_sessions.add(token)
     campaign = (await db.execute(
         select(Campaign).where(
