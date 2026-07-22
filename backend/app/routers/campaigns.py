@@ -27,7 +27,7 @@ TYPES = {
     "maintenance_notice": "Maintenance Notice", "tip": "Tip",
     "featured_project": "Featured Project", "important_notice": "Important Notice",
 }
-STATUSES = {"draft", "published", "archived"}
+STATUSES = {"draft", "unpublished", "published", "archived"}
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 IMAGE_SIGNATURES = {
     "image/jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
@@ -103,6 +103,7 @@ async def target_ids(db: AsyncSession, campaign_id: int) -> list[int]:
 def delivery_status(campaign: Campaign) -> str:
     now = now_utc()
     if campaign.status == "archived": return "archived"
+    if campaign.status == "unpublished": return "unpublished"
     if campaign.status != "published": return "draft"
     if campaign.starts_at and campaign.starts_at > now: return "scheduled"
     if campaign.ends_at and campaign.ends_at <= now: return "expired"
@@ -267,7 +268,7 @@ async def lifecycle(campaign_id, action, admin, db):
     elif action == "unpublish":
         if campaign.status != "published":
             raise HTTPException(409, "Only published campaigns can be unpublished")
-        campaign.status = "draft"
+        campaign.status = "unpublished"
         campaign.published_at = None
     elif action == "archive":
         campaign.status = "archived"
