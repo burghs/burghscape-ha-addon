@@ -5,14 +5,21 @@ const blank = { internal_name:"", title:"", subtitle:"", campaign_type:"announce
 const labels = { announcement:"Announcement", promotion:"Promotion", new_service:"New Service", maintenance_notice:"Maintenance Notice", tip:"Tip", featured_project:"Featured Project", important_notice:"Important Notice" };
 const icons = { announcement:"✦", promotion:"%", new_service:"+", maintenance_notice:"⚙", tip:"i", featured_project:"★", important_notice:"!" };
 const dt = value => value ? new Date(value).toLocaleString() : "Not set";
+const localInput = value => {
+  if (!value) return "";
+  const date = new Date(value.endsWith("Z") ? value : `${value}Z`);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+const utcInput = value => value ? new Date(value).toISOString() : null;
 
 export default function Campaigns() {
   const [items,setItems]=useState([]), [clients,setClients]=useState([]), [loading,setLoading]=useState(true);
   const [error,setError]=useState(null), [editor,setEditor]=useState(null), [preview,setPreview]=useState(null), [deleting,setDeleting]=useState(null), [resetTarget,setResetTarget]=useState(null), [saving,setSaving]=useState(false), [stats,setStats]=useState({});
   const load=useCallback(async()=>{try{const [a,b,s]=await Promise.all([fetch("/api/admin/campaigns",{credentials:"include"}),fetch("/api/admin/campaign-target-clients",{credentials:"include"}),fetch("/api/admin/campaign-popup-stats",{credentials:"include"})]);if(!a.ok||!b.ok||!s.ok)throw new Error("Unable to load campaigns");setItems((await a.json()).campaigns);setClients(await b.json());setStats((await s.json()).campaigns||{});setError(null)}catch(e){setError(e.message)}finally{setLoading(false)}},[]);
   useEffect(()=>{load()},[load]);
-  const edit=item=>setEditor(item?{...item,starts_at:item.starts_at?.slice(0,16)||"",ends_at:item.ends_at?.slice(0,16)||""}:{...blank});
-  const payload=form=>({...form,priority:Number(form.priority)||0,starts_at:form.starts_at||null,ends_at:form.ends_at||null});
+  const edit=item=>setEditor(item?{...item,starts_at:localInput(item.starts_at),ends_at:localInput(item.ends_at)}:{...blank});
+  const payload=form=>({...form,priority:Number(form.priority)||0,starts_at:utcInput(form.starts_at),ends_at:utcInput(form.ends_at)});
   const save=async(publish=false)=>{setSaving(true);setError(null);try{const method=editor.id?"PUT":"POST",url=editor.id?`/api/admin/campaigns/${editor.id}`:"/api/admin/campaigns";let r=await fetch(url,{method,credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload(editor))});let data=await r.json();if(!r.ok)throw new Error(data.detail||"Unable to save campaign");if(editor.imageFile){const fd=new FormData();fd.append("image",editor.imageFile);r=await fetch(`/api/admin/campaigns/${data.id}/image`,{method:"POST",credentials:"include",body:fd});data=await r.json();if(!r.ok)throw new Error(data.detail||"Unable to upload image")}if(publish){r=await fetch(`/api/admin/campaigns/${data.id}/publish`,{method:"POST",credentials:"include"});data=await r.json();if(!r.ok)throw new Error(data.detail||"Unable to publish")}setEditor(null);await load()}catch(e){setError(e.message)}finally{setSaving(false)}};
   const action=async(id,name)=>{const r=await fetch(`/api/admin/campaigns/${id}/${name}`,{method:"POST",credentials:"include"});if(!r.ok){const d=await r.json();setError(d.detail||"Action failed")}await load()};
   const removeImage=async()=>{if(!editor.id){setEditor({...editor,imageFile:null});return}setSaving(true);try{const r=await fetch(`/api/admin/campaigns/${editor.id}/image`,{method:"DELETE",credentials:"include"});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Unable to remove image");setEditor({...editor,has_image:false,image_url:null,imageFile:null});await load()}catch(e){setError(e.message)}finally{setSaving(false)}};

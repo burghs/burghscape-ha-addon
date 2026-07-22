@@ -1,5 +1,5 @@
 """RC1.4.1 campaign administration, targeting, media, and client read-state APIs."""
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlparse
@@ -59,6 +59,17 @@ def now_utc():
     return datetime.utcnow()
 
 
+def database_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalize API timestamps to naive UTC for the existing PostgreSQL columns."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def api_datetime(value: Optional[datetime]) -> Optional[str]:
+    return f"{value.isoformat()}Z" if value else None
+
+
 def valid_action_url(value: Optional[str]) -> bool:
     if not value:
         return True
@@ -100,8 +111,8 @@ def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/admin/campaigns/{campaign.id}/image-file" if campaign.image_reference else None,
         "status": campaign.status, "priority": campaign.priority,
-        "starts_at": campaign.starts_at.isoformat() if campaign.starts_at else None,
-        "ends_at": campaign.ends_at.isoformat() if campaign.ends_at else None,
+        "starts_at": api_datetime(campaign.starts_at),
+        "ends_at": api_datetime(campaign.ends_at),
         "published_at": campaign.published_at.isoformat() if campaign.published_at else None,
         "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
         "updated_at": campaign.updated_at.isoformat() if campaign.updated_at else None,
@@ -121,8 +132,8 @@ def client_payload(campaign: Campaign, is_read: bool) -> dict:
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/portal/campaigns/{campaign.id}/image" if campaign.image_reference else None,
         "published_at": campaign.published_at.isoformat() if campaign.published_at else None,
-        "starts_at": campaign.starts_at.isoformat() if campaign.starts_at else None,
-        "ends_at": campaign.ends_at.isoformat() if campaign.ends_at else None,
+        "starts_at": api_datetime(campaign.starts_at),
+        "ends_at": api_datetime(campaign.ends_at),
         "is_read": is_read,
     }
 
@@ -199,7 +210,10 @@ async def create_campaign(data: CampaignInput, admin: dict = Depends(get_current
     validate_input(data)
     if (await db.execute(select(Campaign.id).where(Campaign.internal_name == data.internal_name.strip()))).scalar():
         raise HTTPException(409, "Internal name already exists")
-    campaign = Campaign(**data.model_dump(exclude={"target_client_ids"}), status="draft",
+    values = data.model_dump(exclude={"target_client_ids"})
+    values["starts_at"] = database_datetime(data.starts_at)
+    values["ends_at"] = database_datetime(data.ends_at)
+    campaign = Campaign(**values, status="draft",
                         created_by=admin["username"], updated_by=admin["username"])
     db.add(campaign)
     await db.flush()
@@ -218,7 +232,10 @@ async def update_campaign(campaign_id: int, data: CampaignInput, admin: dict = D
     duplicate = (await db.execute(select(Campaign.id).where(Campaign.internal_name == data.internal_name.strip(), Campaign.id != campaign.id))).scalar()
     if duplicate:
         raise HTTPException(409, "Internal name already exists")
-    for key, value in data.model_dump(exclude={"target_client_ids"}).items():
+    values = data.model_dump(exclude={"target_client_ids"})
+    values["starts_at"] = database_datetime(data.starts_at)
+    values["ends_at"] = database_datetime(data.ends_at)
+    for key, value in values.items():
         setattr(campaign, key, value)
     campaign.updated_by = admin["username"]
     campaign.updated_at = now_utc()

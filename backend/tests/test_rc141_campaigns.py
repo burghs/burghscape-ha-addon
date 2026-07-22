@@ -3,7 +3,7 @@ import io
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -48,6 +48,11 @@ class FailingCommitDB:
 
 
 class RC141CampaignTests(unittest.TestCase):
+    def test_campaign_api_normalizes_offset_timestamps_to_utc(self):
+        local = datetime(2026, 7, 22, 19, 0, tzinfo=timezone(timedelta(hours=2)))
+        self.assertEqual(campaigns.database_datetime(local), datetime(2026, 7, 22, 17, 0))
+        self.assertEqual(campaigns.api_datetime(datetime(2026, 7, 22, 17, 0)), "2026-07-22T17:00:00Z")
+
     def test_validation_rejects_invalid_type_dates_and_empty_selected_targeting(self):
         base = dict(internal_name="release", title="Release", campaign_type="announcement", body_content="Text")
         for values, detail in (
