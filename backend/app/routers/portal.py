@@ -86,12 +86,19 @@ PORTAL_HTML = """<!DOCTYPE html>
         body.onboarding-active > *:not(#onboarding-modal):not(script) {{ pointer-events:none; }}
         .onboarding-spotlight {{ position:relative; z-index:60; outline:3px solid #a78bfa; outline-offset:5px; }}
         @media (prefers-reduced-motion: reduce) {{ .onboarding-spotlight, .progress-fill {{ transition:none !important; scroll-behavior:auto !important; }} }}
+        body.campaign-popup-open {{ overflow:hidden; }}
+        .campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.84); overscroll-behavior:contain; }}
+        .campaign-modal-backdrop.hidden {{ display:none; }}
+        .campaign-modal-card {{ width:min(100%,640px); max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px; box-shadow:0 28px 80px rgba(0,0,0,.55); }}
+        .campaign-modal-image {{ display:block; width:100%; max-height:min(36dvh,320px); object-fit:cover; aspect-ratio:16/8; }}
         .portal-modal {{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.78); }}
         .portal-modal.hidden {{ display:none; }}
         .modal-panel {{ width:min(100%,760px); max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px; }}
         .backup-row {{ display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid rgba(255,255,255,.08); padding:14px 0; }}
         @media (min-width:768px) {{ .dashboard-grid {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1.5rem; }} .metric-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
         @media (max-width:640px) {{ .backup-row {{ align-items:stretch; flex-direction:column; }} .backup-row .compact-action, .mobile-full {{ width:100%; }} .modal-panel {{ max-height:calc(100dvh - 20px); border-radius:16px; }} }}
+        @media (max-width:640px) {{ .campaign-modal-backdrop {{ padding:10px; }} .campaign-modal-card {{ max-height:calc(100dvh - 20px); border-radius:16px; padding:16px !important; }} .campaign-modal-image {{ max-height:30dvh; aspect-ratio:16/9; }} .campaign-modal-actions > * {{ width:100%; }} }}
+        @media (max-width:390px) {{ .campaign-modal-backdrop {{ padding:6px; }} .campaign-modal-card {{ max-height:calc(100dvh - 12px); border-radius:14px; }} }}
     </style>
     <link rel="stylesheet" href="/static/theme.css">
 </head>
@@ -283,13 +290,13 @@ PORTAL_HTML = """<!DOCTYPE html>
     </script>
     <div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
     <script src="/static/onboarding.js"></script>
-    <div id="login-promotion-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
-        <div role="document" tabindex="-1" class="modal-card w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
+    <div id="login-promotion-modal" class="campaign-modal-backdrop modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
+        <div role="document" tabindex="-1" class="campaign-modal-card modal-card p-5 sm:p-7">
             <div class="flex justify-end"><button type="button" data-popup-close class="touch-action" aria-label="Dismiss promotion">Close</button></div>
-            <img id="login-promotion-image" class="hidden mt-2 max-h-64 w-full rounded-xl object-cover" alt="">
+            <img id="login-promotion-image" class="campaign-modal-image hidden mt-2 rounded-xl" alt="">
             <h2 id="login-promotion-title" class="mt-4 text-2xl font-bold text-white"></h2>
             <p id="login-promotion-summary" class="mt-3 whitespace-pre-line text-gray-300"></p>
-            <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <div class="campaign-modal-actions mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <button id="login-promotion-details" type="button" class="touch-action">View details</button>
                 <button id="login-promotion-primary" type="button" class="btn-primary hidden min-h-11 rounded-xl px-5 py-2.5 font-semibold text-white"></button>
             </div>

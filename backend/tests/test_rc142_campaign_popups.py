@@ -93,11 +93,11 @@ class RC142CampaignPopupTests(unittest.TestCase):
                 await campaign_popups.dismissed(campaign.id,req,db)
                 await campaign_popups.dismissed(campaign.id,req,db)
                 events=(await db.execute(select(CampaignPopupEvent.event_type).where(CampaignPopupEvent.campaign_id==campaign.id))).scalars().all()
-                self.assertEqual(events.count("displayed"),2)
+                self.assertEqual(events.count("displayed"),1)
                 self.assertEqual(events.count("dismissed"),1)
                 self.assertEqual(events.count("opened"),1)
                 stats=await campaign_popups.popup_stats({"username":"admin"},db)
-                self.assertEqual(stats["campaigns"][campaign.id],{"displayed":2,"dismissed":1,"opened":1,"action_clicked":0})
+                self.assertEqual(stats["campaigns"][campaign.id],{"displayed":1,"dismissed":1,"opened":1,"action_clicked":0})
                 reset=await campaign_popups.reset_dismissals(campaign.id,{"username":"admin"},db)
                 self.assertEqual(reset["dismissals_removed"],1)
                 await campaign_popups.action_clicked(campaign.id,req,db)
@@ -106,6 +106,26 @@ class RC142CampaignPopupTests(unittest.TestCase):
                 self.assertIsNone((await campaign_popups.login_popup(request(token2),db))["promotion"])
                 self.assertEqual((await db.execute(select(func.count(CampaignReadState.id)))).scalar(),1)
                 portal_sessions.pop(token,None);portal_sessions.pop(token2,None);popup_evaluated_sessions.discard(token2)
+            await engine.dispose()
+        asyncio.run(scenario())
+
+    def test_empty_poll_does_not_consume_session(self):
+        async def scenario():
+            engine=create_async_engine("sqlite+aiosqlite:///:memory:")
+            async with engine.begin() as connection: await connection.run_sync(Base.metadata.create_all)
+            sessions=async_sessionmaker(engine,expire_on_commit=False)
+            async with sessions() as db:
+                client=Client(name="Polling",email="polling@popup.test",subdomain="popup-polling",status=ClientStatus.ACTIVE)
+                db.add(client);await db.flush()
+                user=ClientUser(client_id=client.id,name="Polling",email="polling-user@popup.test",password_hash="x",is_active=True)
+                db.add(user);await db.flush();db.add(ClientOnboardingState(client_user_id=user.id,onboarding_version="rc1.4.3",status="skipped"));await db.commit()
+                token="popup-empty-poll";portal_sessions[token]=user.id
+                self.assertIsNone((await campaign_popups.login_popup(request(token),db))["promotion"])
+                self.assertNotIn(token,popup_evaluated_sessions)
+                campaign=Campaign(internal_name="live-poll",title="Live",campaign_type="promotion",body_content="Body",status="published",published_at=campaigns.now_utc(),created_by="admin",updated_by="admin",target_all_clients=True,popup_enabled=True)
+                db.add(campaign);await db.commit()
+                self.assertEqual((await campaign_popups.login_popup(request(token),db))["promotion"]["id"],campaign.id)
+                portal_sessions.pop(token,None);popup_evaluated_sessions.discard(token)
             await engine.dispose()
         asyncio.run(scenario())
 
@@ -136,7 +156,12 @@ class RC142CampaignPopupTests(unittest.TestCase):
         self.assertIn("Reset popup dismissals?",admin)
         self.assertIn('event.key==="Escape"',popup)
         self.assertIn('event.key!=="Tab"',popup)
-        self.assertIn('window.addEventListener("load"',popup)
+        self.assertIn('POLL_MS=120000',popup)
+        self.assertIn('setInterval',popup)
+        self.assertIn('campaign-popup-open',popup)
+        self.assertIn('.campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80',portal)
+        self.assertIn('@media (max-width:390px)',portal)
+        self.assertIn('setInterval',(ROOT/"app/static/campaigns-client.js").read_text())
         self.assertNotIn("innerHTML",popup)
 
 

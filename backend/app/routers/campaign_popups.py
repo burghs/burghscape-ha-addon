@@ -33,7 +33,7 @@ def blocked_event(user_id: int):
     return exists(select(CampaignPopupEvent.id).where(
         CampaignPopupEvent.campaign_id == Campaign.id,
         CampaignPopupEvent.client_user_id == user_id,
-        CampaignPopupEvent.event_type.in_(("dismissed", "action_clicked")),
+        CampaignPopupEvent.event_type.in_(("displayed", "dismissed", "action_clicked")),
     ))
 
 
@@ -46,7 +46,6 @@ async def login_popup(request: Request, db: AsyncSession = Depends(get_db)):
     onboarding = await current_state(db, user.id)
     if onboarding is None or onboarding.status in {"not_started", "in_progress"} or onboarding.replay_active:
         return {"promotion": None, "suppressed_by_onboarding": True}
-    popup_evaluated_sessions.add(token)
     campaign = (await db.execute(
         select(Campaign).where(
             visible_clause(user.client_id, now_utc()),
@@ -54,6 +53,8 @@ async def login_popup(request: Request, db: AsyncSession = Depends(get_db)):
             ~blocked_event(user.id),
         ).order_by(Campaign.priority.desc(), Campaign.starts_at.desc().nullslast(), Campaign.id.desc()).limit(1)
     )).scalars().first()
+    if campaign:
+        popup_evaluated_sessions.add(token)
     return {"promotion": popup_payload(campaign) if campaign else None}
 
 
@@ -80,7 +81,7 @@ async def track(request: Request, db: AsyncSession, campaign_id: int, event_type
     campaign = await available_popup(db, campaign_id, user)
     if event_type == "action_clicked" and not (campaign.call_to_action_label and campaign.call_to_action_url):
         raise HTTPException(409, "Promotion has no primary action")
-    if event_type in {"dismissed", "action_clicked"}:
+    if event_type in {"displayed", "dismissed", "action_clicked"}:
         present = (await db.execute(select(CampaignPopupEvent.id).where(
             CampaignPopupEvent.campaign_id == campaign_id,
             CampaignPopupEvent.client_user_id == user.id,
