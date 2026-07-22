@@ -2,6 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlparse
 import logging
 import os
 import secrets
@@ -44,6 +45,9 @@ class CampaignInput(BaseModel):
     price_text: Optional[str] = Field(default=None, max_length=100)
     regular_price_text: Optional[str] = Field(default=None, max_length=100)
     call_to_action_label: Optional[str] = Field(default=None, max_length=100)
+    call_to_action_url: Optional[str] = Field(default=None, max_length=1000)
+    popup_enabled: bool = False
+    popup_summary: Optional[str] = Field(default=None, max_length=500)
     priority: int = Field(default=0, ge=-1000, le=1000)
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
@@ -55,6 +59,17 @@ def now_utc():
     return datetime.utcnow()
 
 
+def valid_action_url(value: Optional[str]) -> bool:
+    if not value:
+        return True
+    if any(character in value for character in ("\r", "\n", "\\")):
+        return False
+    parsed = urlparse(value)
+    if not parsed.scheme and not parsed.netloc:
+        return parsed.path in {"/portal", "/portal/whats-new", "/portal/getting-started"}
+    return parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
+
+
 def validate_input(data: CampaignInput, publishing: bool = False):
     if data.campaign_type not in TYPES:
         raise HTTPException(422, "Invalid campaign type")
@@ -62,6 +77,8 @@ def validate_input(data: CampaignInput, publishing: bool = False):
         raise HTTPException(422, "End date must be after start date")
     if not data.target_all_clients and not data.target_client_ids:
         raise HTTPException(422, "Selected-client targeting requires at least one client")
+    if data.call_to_action_url and not valid_action_url(data.call_to_action_url):
+        raise HTTPException(422, "Action URL must be an approved portal route or valid HTTPS URL")
     if publishing and not data.title.strip():
         raise HTTPException(422, "Campaign title is required")
 
@@ -78,6 +95,8 @@ def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
         "body_content": campaign.body_content, "price_text": campaign.price_text,
         "regular_price_text": campaign.regular_price_text,
         "call_to_action_label": campaign.call_to_action_label,
+        "call_to_action_url": campaign.call_to_action_url,
+        "popup_enabled": campaign.popup_enabled, "popup_summary": campaign.popup_summary,
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/admin/campaigns/{campaign.id}/image-file" if campaign.image_reference else None,
         "status": campaign.status, "priority": campaign.priority,

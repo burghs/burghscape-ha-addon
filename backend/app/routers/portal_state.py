@@ -3,3 +3,6 @@
 
 # Session token -> user_id mapping
 portal_sessions: dict = {}
+
+
+popup_evaluated_sessions: set[str] = set()

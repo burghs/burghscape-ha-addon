@@ -1,5 +1,15 @@
 # Platform Changelog
 
+## 2026-07-22 — RC1.4.2 Login Promotion Popups
+
+- Extended the existing campaign framework with optional login-popup enablement, popup summary text, and validated internal/HTTPS call-to-action destinations.
+- Added server-side active-window, client-targeting, dismissal, completed-action, priority, and newest-start-date eligibility rules with one popup evaluation per authenticated session.
+- Added per-user display, dismissal, detail-open, and primary-action event tracking; display does not mark a campaign read, while detail and primary actions do.
+- Added administrator popup metrics and confirmation-gated dismissal reset while preserving completed-action exclusions.
+- Added a responsive, theme-compatible Client Portal popup with image, summary, optional primary action, details navigation, accessible close control, Escape handling, and keyboard focus trapping.
+- Added migration `backend/migrations/20260722_add_campaign_login_popups.sql`; existing campaigns default to popup disabled and retain their current What’s New behavior.
+- Subscription changes, billing, onboarding tours, email/push campaigns, popup carousels, and complex marketing analytics were not added.
+
 ## 2026-07-22 — RC1.4.1 Campaign Framework
 
 - Added administrator-managed campaigns with draft, published, unpublished, archived, preview, selected-client targeting, priority, effective dates, and draft-only confirmed deletion workflows.

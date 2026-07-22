@@ -68,6 +68,7 @@ class ClientUser(Base):
     last_login = Column(DateTime)
     client = relationship("Client", back_populates="portal_users")
     campaign_reads = relationship("CampaignReadState", back_populates="user", cascade="all, delete-orphan")
+    campaign_popup_events = relationship("CampaignPopupEvent", back_populates="user", cascade="all, delete-orphan")
 class HomeAssistantInstance(Base):
     __tablename__ = "ha_instances"
     id = Column(Integer, primary_key=True, index=True)
@@ -184,6 +185,9 @@ class Campaign(Base):
     price_text = Column(String(100))
     regular_price_text = Column(String(100))
     call_to_action_label = Column(String(100))
+    call_to_action_url = Column(String(1000))
+    popup_enabled = Column(Boolean, nullable=False, default=False)
+    popup_summary = Column(String(500))
     image_reference = Column(String(255))
     image_content_type = Column(String(50))
     status = Column(String(20), nullable=False, default="draft", index=True)
@@ -199,6 +203,7 @@ class Campaign(Base):
     archived_at = Column(DateTime)
     targets = relationship("CampaignTarget", back_populates="campaign", cascade="all, delete-orphan")
     read_states = relationship("CampaignReadState", back_populates="campaign", cascade="all, delete-orphan")
+    popup_events = relationship("CampaignPopupEvent", back_populates="campaign", cascade="all, delete-orphan")
     __table_args__ = (Index("ix_campaign_visibility", "status", "starts_at", "ends_at", "priority"),)
 
 class CampaignTarget(Base):
@@ -217,3 +222,15 @@ class CampaignReadState(Base):
     campaign = relationship("Campaign", back_populates="read_states")
     user = relationship("ClientUser", back_populates="campaign_reads")
     __table_args__ = (UniqueConstraint("campaign_id", "client_user_id", name="uq_campaign_read_user"),)
+
+
+class CampaignPopupEvent(Base):
+    __tablename__ = "campaign_popup_events"
+    id = Column(Integer, primary_key=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String(30), nullable=False, index=True)
+    occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    campaign = relationship("Campaign", back_populates="popup_events")
+    user = relationship("ClientUser", back_populates="campaign_popup_events")
+    __table_args__ = (Index("ix_campaign_popup_user_event", "client_user_id", "campaign_id", "event_type"),)

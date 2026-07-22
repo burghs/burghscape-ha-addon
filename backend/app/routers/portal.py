@@ -278,6 +278,19 @@ PORTAL_HTML = """<!DOCTYPE html>
             else {{ const data = await res.json(); msgEl.textContent = data.detail || 'Failed'; msgEl.className = 'text-sm mt-2 text-red-400'; }}
         }}
     </script>
+    <div id="login-promotion-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
+        <div role="document" tabindex="-1" class="modal-card w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
+            <div class="flex justify-end"><button type="button" data-popup-close class="touch-action" aria-label="Dismiss promotion">Close</button></div>
+            <img id="login-promotion-image" class="hidden mt-2 max-h-64 w-full rounded-xl object-cover" alt="">
+            <h2 id="login-promotion-title" class="mt-4 text-2xl font-bold text-white"></h2>
+            <p id="login-promotion-summary" class="mt-3 whitespace-pre-line text-gray-300"></p>
+            <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <button id="login-promotion-details" type="button" class="touch-action">View details</button>
+                <button id="login-promotion-primary" type="button" class="btn-primary hidden min-h-11 rounded-xl px-5 py-2.5 font-semibold text-white"></button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/campaign-popup.js"></script>
 </body>
 </html>
 """
