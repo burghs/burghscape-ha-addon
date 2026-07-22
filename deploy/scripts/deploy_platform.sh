@@ -18,8 +18,21 @@ git archive HEAD:backend | docker build --build-arg "APP_VERSION=$platform_versi
 git archive HEAD:frontend | docker build --build-arg "APP_VERSION=$platform_version" --build-arg "VCS_REF=$platform_commit" -t "burghscape-frontend:$platform_commit" -
 docker compose -f "$compose_base" -f "$compose_release" up -d --no-build --force-recreate backend frontend
 
-health=$(curl --fail --silent --show-error http://127.0.0.1:8000/health)
-frontend=$(curl --fail --silent --show-error http://127.0.0.1:3000/version.json)
+fetch_with_retry() {
+  local url=$1
+  local value
+  for _attempt in $(seq 1 30); do
+    if value=$(curl --fail --silent --show-error "$url" 2>/dev/null); then
+      printf '%s' "$value"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for $url" >&2
+  return 1
+}
+health=$(fetch_with_retry http://127.0.0.1:8000/health)
+frontend=$(fetch_with_retry http://127.0.0.1:3000/version.json)
 python3 - "$platform_version" "$platform_commit" "$health" "$frontend" <<'PY'
 import json,sys
 version,commit,health_raw,frontend_raw=sys.argv[1:]
