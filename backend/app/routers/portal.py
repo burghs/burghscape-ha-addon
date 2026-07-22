@@ -50,6 +50,8 @@ PORTAL_HTML = """<!DOCTYPE html>
         .nav-link:hover {{ color: #a78bfa; }}
         .campaign-nav-unread {{ color:#c4b5fd !important; text-shadow:0 0 14px rgba(167,139,250,.58); }}
         .campaign-unread-pulse {{ animation:campaignUnreadPulse 2.8s ease-in-out infinite; }}
+        .campaign-unread-banner {{ display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid rgba(167,139,250,.3); background:rgba(139,92,246,.1); }}
+        body.onboarding-active #campaign-unread-banner {{ display:none !important; }}
         @keyframes campaignUnreadPulse {{ 0%,100% {{ box-shadow:0 0 0 rgba(139,92,246,0); }} 50% {{ box-shadow:0 0 14px rgba(139,92,246,.42); }} }}
         .brand-logo {{ height: 40px; width: 40px; object-fit: contain; display: block; flex-shrink: 0; }}
         .portal-card {{ border-radius: 16px; }}
@@ -100,6 +102,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         .backup-row {{ display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid rgba(255,255,255,.08); padding:14px 0; }}
         @media (min-width:768px) {{ .dashboard-grid {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1.5rem; }} .metric-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
         @media (max-width:640px) {{ .backup-row {{ align-items:stretch; flex-direction:column; }} .backup-row .compact-action, .mobile-full {{ width:100%; }} .modal-panel {{ max-height:calc(100dvh - 20px); border-radius:16px; }} }}
+        @media (max-width:640px) {{ .campaign-unread-banner {{ align-items:stretch; flex-direction:column; }} .campaign-unread-banner .compact-action {{ width:100%; }} }}
         @media (max-width:640px) {{ .campaign-modal-backdrop {{ padding:10px; }} .campaign-modal-card {{ max-height:calc(100dvh - 20px); border-radius:16px; padding:16px !important; }} .campaign-modal-image {{ max-height:30dvh; aspect-ratio:16/9; }} .campaign-modal-actions > * {{ width:100%; }} }}
         @media (max-width:390px) {{ .campaign-modal-backdrop {{ padding:6px; }} .campaign-modal-card {{ max-height:calc(100dvh - 12px); border-radius:14px; }} }}
     </style>
@@ -135,6 +138,7 @@ PORTAL_HTML = """<!DOCTYPE html>
 
     <main class="max-w-7xl mx-auto px-4 py-5 sm:px-6 sm:py-7">
         {onboarding_banner_html}
+        <aside id="campaign-unread-banner" class="hidden campaign-unread-banner portal-card mb-4 p-4 sm:mb-6" aria-live="polite"><p id="campaign-unread-message" class="text-sm font-semibold text-purple-100"></p><a href="/portal/whats-new" class="compact-action shrink-0">View What’s New</a></aside>
         <section data-onboarding-target="instance" class="card portal-card p-5 sm:p-6 mb-4 sm:mb-6" aria-labelledby="instance-heading">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0"><div class="flex flex-wrap items-center gap-3"><h1 id="instance-heading" class="text-xl sm:text-2xl font-bold text-white truncate">{instance_name}</h1><span class="inline-flex items-center gap-2 text-sm {online_text_class}"><span class="status-dot {online_dot_class}"></span>{online_status}</span></div>
@@ -199,7 +203,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         function choosePortalTheme(value) {{ window.MyBeaconTheme.setPreference(value); syncThemeControls(); }}
         window.addEventListener('mybeacon-theme-change',syncThemeControls);
         syncThemeControls();
-        const campaignStatusInterval=120000;
+        const campaignStatusInterval=30000;
         async function refreshCampaignUnread() {{
             const response=await fetch('/api/portal/campaigns/unread-count',{{credentials:'include',cache:'no-store'}});
             if(!response.ok)return;
@@ -211,8 +215,10 @@ PORTAL_HTML = """<!DOCTYPE html>
                 badge.classList.toggle('hidden',!count);
                 badge.classList.toggle('campaign-unread-pulse',!!count);
                 nav.classList.toggle('campaign-nav-unread',!!count);
-                if(count)badge.setAttribute('aria-label',count+' unread updates');else badge.removeAttribute('aria-label');
+                if(count)nav.setAttribute('aria-label','What’s New, '+count+' unread announcement'+(count===1?'':'s'));else nav.removeAttribute('aria-label');
             }});
+            const banner=document.getElementById('campaign-unread-banner'),message=document.getElementById('campaign-unread-message');
+            if(banner&&message){{message.textContent=count===1?'You have 1 new announcement.':'You have '+count+' new announcements.';banner.classList.toggle('hidden',!count);}}
         }}
         refreshCampaignUnread().catch(()=>{{}});
         setInterval(()=>{{if(!document.hidden)refreshCampaignUnread().catch(()=>{{}});}},campaignStatusInterval);

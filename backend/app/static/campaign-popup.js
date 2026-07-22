@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var POLL_MS=120000,modal=document.getElementById("login-promotion-modal");
+var POLL_MS=30000,modal=document.getElementById("login-promotion-modal");
 if(!modal)return;
 var panel=modal.querySelector("[role=document]"),title=document.getElementById("login-promotion-title"),summary=document.getElementById("login-promotion-summary"),image=document.getElementById("login-promotion-image"),primary=document.getElementById("login-promotion-primary"),details=document.getElementById("login-promotion-details"),closeButtons=modal.querySelectorAll("[data-popup-close]");
 var promotion=null,previousFocus=null,checking=false,visible=false,onboardingActive=true;

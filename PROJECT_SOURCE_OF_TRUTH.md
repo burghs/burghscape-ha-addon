@@ -103,7 +103,7 @@ The Platform is verified only when GitHub `origin/master`, local `master`, backe
 
 Implemented Platform subscription functionality consists of client tiers, included-support-hour presentation, subscription-token creation/rotation/deactivation, and Agent authentication. Automated billing, payment collection, self-service plan changes/cancellation, invoices, and entitlement enforcement are not implemented and must not be represented as complete.
 
-Implemented campaign functionality includes admin lifecycle, targeting, client What’s New/read state, popup eligibility, CTA, metrics, dismissal reset, and onboarding suppression. The authenticated portal polls every two minutes for newly eligible campaigns; What’s New refreshes in place, while login promotions appear without a new login and are recorded at most once per user. Scheduled future campaigns are intentionally absent from client APIs.
+Implemented campaign functionality includes admin lifecycle, targeting, client What’s New/read state, popup eligibility, CTA, metrics, dismissal reset, and onboarding suppression. Every eligible published campaign appears in What’s New; popup notification is an independent optional delivery channel and audience selection is independent of delivery. Popup-enabled campaigns are shown once when first discovered. The authenticated portal checks at load, when a hidden tab becomes visible, and every 30 seconds while visible, so online delivery may take up to 30 seconds and is not push delivery. Unread navigation badges and the dashboard announcement banner use the same server-side read count. Scheduled future campaigns are intentionally absent from client APIs.
 
 ## Common mistakes and things never to assume
 
