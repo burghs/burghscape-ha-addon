@@ -48,6 +48,9 @@ PORTAL_HTML = """<!DOCTYPE html>
         .progress-fill {{ background: linear-gradient(90deg, #8b5cf6, #6d28d9); height: 100%; border-radius: 999px; transition: width 1s; }}
         .nav-link {{ transition: all 0.2s; }}
         .nav-link:hover {{ color: #a78bfa; }}
+        .campaign-nav-unread {{ color:#c4b5fd !important; text-shadow:0 0 14px rgba(167,139,250,.58); }}
+        .campaign-unread-pulse {{ animation:campaignUnreadPulse 2.8s ease-in-out infinite; }}
+        @keyframes campaignUnreadPulse {{ 0%,100% {{ box-shadow:0 0 0 rgba(139,92,246,0); }} 50% {{ box-shadow:0 0 14px rgba(139,92,246,.42); }} }}
         .brand-logo {{ height: 40px; width: 40px; object-fit: contain; display: block; flex-shrink: 0; }}
         .portal-card {{ border-radius: 16px; }}
         .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 14px; }}
@@ -85,7 +88,7 @@ PORTAL_HTML = """<!DOCTYPE html>
         .focusable:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {{ outline:2px solid #a78bfa; outline-offset:2px; }}
         body.onboarding-active > *:not(#onboarding-modal):not(script) {{ pointer-events:none; }}
         .onboarding-spotlight {{ position:relative; z-index:60; outline:3px solid #a78bfa; outline-offset:5px; }}
-        @media (prefers-reduced-motion: reduce) {{ .onboarding-spotlight, .progress-fill {{ transition:none !important; scroll-behavior:auto !important; }} }}
+        @media (prefers-reduced-motion: reduce) {{ .onboarding-spotlight, .progress-fill {{ transition:none !important; scroll-behavior:auto !important; }} .campaign-unread-pulse {{ animation:none !important; }} }}
         body.campaign-popup-open {{ overflow:hidden; }}
         .campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.84); overscroll-behavior:contain; }}
         .campaign-modal-backdrop.hidden {{ display:none; }}
@@ -111,13 +114,13 @@ PORTAL_HTML = """<!DOCTYPE html>
                 <span class="hidden lg:inline text-sm text-gray-400 truncate">{client_name}</span>
             </div>
             <div class="hidden sm:flex shrink-0 items-center gap-4 text-sm">
-                <span class="text-gray-400">{user_name}</span><a data-onboarding-target="campaigns" href="/portal/whats-new" class="nav-link text-gray-400 hover:text-purple-300">What’s New <span id="campaign-unread-desktop" class="hidden badge badge-primary ml-1"></span></a><a data-onboarding-target="getting-started" href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
+                <span class="text-gray-400">{user_name}</span><a id="campaign-nav-desktop" data-onboarding-target="campaigns" href="/portal/whats-new" class="nav-link text-gray-400 hover:text-purple-300">What’s New <span id="campaign-unread-desktop" class="hidden badge badge-primary ml-1"></span></a><a data-onboarding-target="getting-started" href="/portal/getting-started" class="{setup_nav_class}">{setup_nav_label}</a>
                 <button data-onboarding-target="account" type="button" onclick="toggleAccountPanel()" class="nav-link text-gray-400 hover:text-purple-300">Account</button><a href="/portal/logout" class="nav-link text-gray-400 hover:text-purple-300">Logout</a>
             </div>
             <button type="button" class="sm:hidden touch-action border border-white/10 text-white" aria-controls="mobile-nav" aria-expanded="false" onclick="toggleMobileNav(this)">Menu</button>
         </div>
         <div id="mobile-nav" class="hidden sm:hidden max-w-7xl mx-auto mt-3 grid gap-2 border-t border-white/10 pt-3 text-sm">
-            <span class="text-gray-400 px-2">{user_name}</span><a href="/portal/whats-new" class="touch-action justify-start text-gray-300">What’s New <span id="campaign-unread-mobile" class="hidden badge badge-primary ml-1"></span></a><a href="/portal/getting-started" class="touch-action justify-start text-purple-300">{setup_nav_label}</a>
+            <span class="text-gray-400 px-2">{user_name}</span><a id="campaign-nav-mobile" href="/portal/whats-new" class="touch-action justify-start text-gray-300">What’s New <span id="campaign-unread-mobile" class="hidden badge badge-primary ml-1"></span></a><a href="/portal/getting-started" class="touch-action justify-start text-purple-300">{setup_nav_label}</a>
             <button type="button" onclick="toggleAccountPanel();toggleMobileNav(document.querySelector('[aria-controls=mobile-nav]'))" class="touch-action justify-start text-gray-300">Account</button><a href="/portal/logout" class="touch-action justify-start text-gray-300">Logout</a>
         </div>
         <div id="pw-form-nav" class="hidden max-w-7xl mx-auto mt-3 p-4 bg-gray-900/80 rounded-xl border border-purple-500/10 sm:max-w-sm sm:ml-auto">
@@ -196,7 +199,24 @@ PORTAL_HTML = """<!DOCTYPE html>
         function choosePortalTheme(value) {{ window.MyBeaconTheme.setPreference(value); syncThemeControls(); }}
         window.addEventListener('mybeacon-theme-change',syncThemeControls);
         syncThemeControls();
-        fetch('/api/portal/campaigns/unread-count',{{credentials:'include'}}).then(r=>r.ok?r.json():null).then(data=>{{if(!data||!data.unread_count)return;['campaign-unread-desktop','campaign-unread-mobile'].forEach(id=>{{const el=document.getElementById(id);if(el){{el.textContent=data.unread_count;el.classList.remove('hidden');el.setAttribute('aria-label',data.unread_count+' unread updates');}}}});}}).catch(()=>{{}});
+        const campaignStatusInterval=120000;
+        async function refreshCampaignUnread() {{
+            const response=await fetch('/api/portal/campaigns/unread-count',{{credentials:'include',cache:'no-store'}});
+            if(!response.ok)return;
+            const count=(await response.json()).unread_count||0;
+            [['campaign-unread-desktop','campaign-nav-desktop'],['campaign-unread-mobile','campaign-nav-mobile']].forEach(([badgeId,navId])=>{{
+                const badge=document.getElementById(badgeId),nav=document.getElementById(navId);
+                if(!badge||!nav)return;
+                badge.textContent=count||'';
+                badge.classList.toggle('hidden',!count);
+                badge.classList.toggle('campaign-unread-pulse',!!count);
+                nav.classList.toggle('campaign-nav-unread',!!count);
+                if(count)badge.setAttribute('aria-label',count+' unread updates');else badge.removeAttribute('aria-label');
+            }});
+        }}
+        refreshCampaignUnread().catch(()=>{{}});
+        setInterval(()=>{{if(!document.hidden)refreshCampaignUnread().catch(()=>{{}});}},campaignStatusInterval);
+        document.addEventListener('visibilitychange',()=>{{if(!document.hidden)refreshCampaignUnread().catch(()=>{{}});}});
         function openPortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.remove('hidden'); document.body.style.overflow='hidden'; activePortalModal=id; const panel=modal.querySelector('[tabindex]'); if(panel) panel.focus(); }}
         function closePortalModal(id) {{ const modal=document.getElementById(id); if(!modal) return; modal.classList.add('hidden'); document.body.style.overflow=''; if(activePortalModal===id) activePortalModal=null; }}
         function closeOnBackdrop(event,id) {{ if(event.target===event.currentTarget) closePortalModal(id); }}

@@ -162,6 +162,15 @@ class RC142CampaignPopupTests(unittest.TestCase):
         self.assertIn('.campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80',portal)
         self.assertIn('@media (max-width:390px)',portal)
         self.assertIn('setInterval',(ROOT/"app/static/campaigns-client.js").read_text())
+        self.assertIn('campaignStatusInterval=120000',portal)
+        self.assertIn("badge.classList.toggle('hidden',!count)",portal)
+        self.assertIn("nav.classList.toggle('campaign-nav-unread',!!count)",portal)
+        self.assertIn('.campaign-unread-pulse {{ animation:none !important; }}',portal)
+        migration=(ROOT/"migrations/20260722_clear_pre_overlay_popup_impressions.sql").read_text()
+        self.assertIn("event_type = 'displayed'",migration)
+        self.assertNotIn("event_type = 'dismissed'",migration)
+        deploy=(ROOT.parent/"deploy/scripts/deploy_platform.sh").read_text()
+        self.assertIn('20260722_clear_pre_overlay_popup_impressions.sql',deploy)
         self.assertNotIn("innerHTML",popup)
 
 
