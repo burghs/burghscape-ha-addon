@@ -63,5 +63,6 @@
 - COMPLETE — password-plus-factor client self-disable
 - COMPLETE — reason/confirmation-gated administrator reset and audit history
 - COMPLETE — additive disabled-by-default migration and deployment key gate
+- COMPLETE — authenticated Account Security status, enrollment, recovery regeneration, and disable UI wiring
 - IN PROGRESS — controlled live client/API validation
 - BLOCKED — COMPLETE status until real authenticator enrollment/login and recovery-code acceptance are signed off

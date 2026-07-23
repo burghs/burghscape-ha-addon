@@ -12,7 +12,7 @@ The existing salted password check runs first. Users without TOTP receive the ex
 
 ## Enrollment
 
-Open Client Portal → Account & Support → Account Security. Enter the current password, then scan the locally generated SVG QR code or enter the manual key. The issuer is `MyBeacon by Burghscape` and the account label is the portal email address. Pending enrollment expires after ten minutes and cancellation leaves TOTP disabled. The secret is encrypted before database storage and is not returned after verification.
+Open Client Portal → Account. The Security section shows the live Two-Factor Authentication status and links to the authenticated Account Security flow. Enter the current password, then scan the locally generated SVG QR code or enter the manual key. The issuer is `MyBeacon by Burghscape` and the account label is the portal email address. Pending enrollment expires after ten minutes and cancellation leaves TOTP disabled. The secret is encrypted before database storage and is not returned after verification.
 
 Ten recovery codes are generated after successful verification and displayed once. The client must acknowledge saving them in the UI. Database records contain only independently salted PBKDF2-SHA256 hashes. Codes are single-use; regeneration invalidates every previous code.
 
@@ -49,6 +49,10 @@ Before rollback, disable or administratively reset every enrolled user. Applicat
 TOTP/recovery challenge attempts, enrollment verification, recovery regeneration, client disable, and administrator reset have separate short-window limits. Generic challenge failures avoid exposing account state. Existing password login behavior and its current controls are unchanged.
 
 Portal sessions and password-reset tokens remain process-memory state in the current architecture. This pre-existing limitation is not expanded by Phase 1. TOTP challenges themselves are database-backed so refresh and process restart do not turn them into authenticated sessions.
+
+## Client Account interface
+
+The dashboard Account flyout contains a Security section below Theme and Change Password. It loads the authenticated status endpoint whenever Account opens. Disabled users see **Enable two-factor authentication**; enabled users see the enabled date, remaining recovery-code count, and **Manage two-factor authentication**. Enrollment, regeneration, and secure disable run on `/portal/security`; the public login page never offers enrollment. QR/manual setup values and newly generated recovery codes exist only in the active enrollment/regen response and are never persisted in browser storage.
 
 ## Acceptance status
 

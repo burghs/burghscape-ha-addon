@@ -138,6 +138,16 @@ PORTAL_HTML = """<!DOCTYPE html>
             <input type="password" id="pw-new-nav" placeholder="New password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-2 text-white">
             <input type="password" id="pw-confirm-nav" placeholder="Confirm password" class="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 mb-3 text-white">
             <button type="button" onclick="changePasswordNav()" class="compact-action w-full">Update password</button><p id="pw-msg-nav" class="text-sm mt-2 hidden"></p>
+            <section class="mt-5 border-t border-white/10 pt-5" aria-labelledby="account-security-heading">
+                <h2 id="account-security-heading" class="text-sm font-semibold text-white">Security</h2>
+                <div class="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold text-white">Two-Factor Authentication</h3><span id="account-two-factor-status" class="badge">Checking…</span></div>
+                    <p id="account-two-factor-copy" class="mt-2 text-sm text-gray-400">Protect your account with an authenticator app.</p>
+                    <p id="account-two-factor-details" class="mt-2 hidden text-xs text-gray-500"></p>
+                    <a id="account-two-factor-action" href="/portal/security" class="compact-action mt-4 w-full">Manage two-factor authentication</a>
+                    <p id="account-two-factor-error" role="status" class="mt-2 hidden text-xs text-red-300">Security status is temporarily unavailable. Open Account Security to try again.</p>
+                </div>
+            </section>
         </div>
     </nav>
 
@@ -203,7 +213,20 @@ PORTAL_HTML = """<!DOCTYPE html>
     <script>
         let activePortalModal = null;
         function toggleMobileNav(button) {{ const nav=document.getElementById('mobile-nav'); const hidden=nav.classList.toggle('hidden'); if(button) button.setAttribute('aria-expanded', String(!hidden)); }}
-        function toggleAccountPanel() {{ document.getElementById('pw-form-nav').classList.toggle('hidden'); }}
+        function toggleAccountPanel() {{ const panel=document.getElementById('pw-form-nav'); const opening=panel.classList.contains('hidden'); panel.classList.toggle('hidden'); if(opening) refreshAccountSecurity(); }}
+        async function refreshAccountSecurity() {{
+            const status=document.getElementById('account-two-factor-status'),copy=document.getElementById('account-two-factor-copy'),details=document.getElementById('account-two-factor-details'),action=document.getElementById('account-two-factor-action'),error=document.getElementById('account-two-factor-error');
+            status.textContent='Checking…'; status.className='badge'; error.classList.add('hidden');
+            try {{
+                const response=await fetch('/api/portal/security/two-factor',{{credentials:'include',cache:'no-store'}});
+                if(!response.ok) throw new Error('status unavailable');
+                const data=await response.json();
+                status.textContent=data.enabled?'Enabled':'Disabled'; status.className='badge '+(data.enabled?'badge-success':'');
+                copy.textContent=data.enabled?'Your account requires an authenticator or recovery code after your password.':'Protect your account with an authenticator app.';
+                action.textContent=data.enabled?'Manage two-factor authentication':'Enable two-factor authentication';
+                if(data.enabled) {{ const enabledDate=data.enabled_at?new Date(data.enabled_at).toLocaleDateString():null; details.textContent=(enabledDate?'Enabled '+enabledDate+' · ':'')+data.recovery_codes_remaining+' recovery code'+(data.recovery_codes_remaining===1?'':'s')+' remaining'; details.classList.remove('hidden'); }} else {{ details.textContent=''; details.classList.add('hidden'); }}
+            }} catch (_) {{ status.textContent='Unavailable'; copy.textContent='Open Account Security to review your settings.'; action.textContent='Open Account Security'; details.classList.add('hidden'); error.classList.remove('hidden'); }}
+        }}
         function syncThemeControls() {{ const preference=window.MyBeaconTheme.getPreference(); document.querySelectorAll('[data-theme-choice]').forEach(button=>{{ button.setAttribute('aria-checked',String(button.dataset.themeChoice===preference)); }}); }}
         function choosePortalTheme(value) {{ window.MyBeaconTheme.setPreference(value); syncThemeControls(); }}
         window.addEventListener('mybeacon-theme-change',syncThemeControls);

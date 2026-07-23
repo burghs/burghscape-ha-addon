@@ -224,7 +224,14 @@ class TwoFactorAuthenticationTests(unittest.TestCase):
         router_source = (ROOT / "app/routers/two_factor.py").read_text()
         portal_source = (ROOT / "app/routers/portal.py").read_text()
         admin_source = (ROOT.parent / "frontend/src/pages/Clients.jsx").read_text()
-        self.assertIn("Account Security", portal_source)
+        for value in ("account-security-heading", "Two-Factor Authentication", "account-two-factor-status", "Enable two-factor authentication", "refreshAccountSecurity", "/api/portal/security/two-factor", 'href="/portal/security"'):
+            self.assertIn(value, portal_source)
+        account_panel = portal_source[portal_source.index('id="pw-form-nav"'):portal_source.index('</nav>')]
+        self.assertIn("Theme", account_panel)
+        self.assertIn("Change password", account_panel)
+        self.assertIn("Security", account_panel)
+        login_page = portal_source[portal_source.index('LOGIN_HTML ='):]
+        self.assertNotIn("Enable two-factor authentication", login_page)
         for value in ("autocomplete=\"one-time-code\"", "Use a recovery code", "locally generated QR code", "I have saved these recovery codes"):
             self.assertIn(value, router_source)
         for value in ("Reset 2FA", "reason.trim().length < 5", "Two-factor reset audit"):
