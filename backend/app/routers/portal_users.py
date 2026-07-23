@@ -2,14 +2,14 @@
 import secrets
 import hashlib
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Response
 from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db, async_session
-from models import ClientUser, Client, SupportTicket
+from models import ClientUser, Client, SupportTicket, TwoFactorChallenge
 
 router = APIRouter()
 
@@ -70,7 +70,7 @@ async def verify_portal_token(token: str, db: AsyncSession) -> Optional[ClientUs
 # --- Auth Endpoints ---
 
 @router.post("/auth/login")
-async def portal_login(login: PortalLogin, db: AsyncSession = Depends(get_db)):
+async def portal_login(login: PortalLogin, response: Response, db: AsyncSession = Depends(get_db)):
     """Login to client portal."""
     result = await db.execute(
         select(ClientUser).where(
@@ -83,7 +83,22 @@ async def portal_login(login: PortalLogin, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(login.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Generate session token
+    if user.two_factor_enabled:
+        from two_factor_security import token_hash
+        raw_challenge = secrets.token_urlsafe(48)
+        db.add(TwoFactorChallenge(
+            client_user_id=user.id,
+            token_hash=token_hash(raw_challenge),
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+        ))
+        response.set_cookie(
+            key="portal_2fa_challenge", value=raw_challenge, httponly=True,
+            secure=True, samesite="lax", path="/", max_age=300,
+        )
+        await db.flush()
+        return {"requires_two_factor": True, "challenge_url": "/portal/two-factor"}
+
+    # Preserve the existing password-only session flow for users without TOTP.
     token = generate_session_token()
     portal_tokens[token] = user.id
     user.last_login = datetime.now()
@@ -276,6 +291,8 @@ async def admin_list_portal_users(
             "role": u.role,
             "is_active": u.is_active,
             "force_password_change": u.force_password_change,
+            "two_factor_enabled": bool(u.two_factor_enabled),
+            "two_factor_enabled_at": u.two_factor_enabled_at.isoformat() if u.two_factor_enabled_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_login": u.last_login.isoformat() if u.last_login else None,
         }

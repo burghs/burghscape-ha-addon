@@ -2,6 +2,8 @@ services:
   backend:
     image: "burghscape-backend:${PLATFORM_IMAGE_TAG:?set PLATFORM_IMAGE_TAG}"
     pull_policy: never
+    environment:
+      TOTP_ENCRYPTION_KEY: "${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY must be set}"
     volumes: !override
       - /home/kenny/burghscape/config:/app/config:ro
       - /home/kenny/backups:/backups:rw

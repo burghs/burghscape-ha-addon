@@ -27,6 +27,7 @@ export default function Clients() {
   const [templateCategory, setTemplateCategory] = useState('all');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [portalUsers, setPortalUsers] = useState([]);
+  const [securityAudit, setSecurityAudit] = useState([]);
   const [showPortalUserForm, setShowPortalUserForm] = useState(false);
   const [portalUserForm, setPortalUserForm] = useState({ client_id: '', name: '', email: '', password: '', role: 'viewer' });
   const [editingPortalUser, setEditingPortalUser] = useState(null);
@@ -101,6 +102,8 @@ export default function Clients() {
         const data = await res.json();
         setPortalUsers(data);
       }
+      const auditRes = await fetch('/api/portal/admin/security-audit', { credentials: 'include' });
+      if (auditRes.ok) setSecurityAudit(await auditRes.json());
     } catch (err) {
       console.error('Failed to fetch portal users:', err);
     }
@@ -153,6 +156,23 @@ export default function Clients() {
     } catch (err) {
       alert('Network error');
     }
+  };
+
+  const resetPortalUserTwoFactor = async (user) => {
+    if (!user.two_factor_enabled) return;
+    const reason = prompt('Reason for resetting two-factor authentication for ' + user.name + ':');
+    if (!reason || reason.trim().length < 5) { if (reason !== null) alert('A reason of at least 5 characters is required.'); return; }
+    if (!confirm('Reset two-factor authentication for ' + user.name + '? Recovery codes and pending challenges will be invalidated.')) return;
+    try {
+      const res = await fetch('/api/portal/admin/portal-users/' + user.id + '/two-factor/reset', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true, reason: reason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Reset failed');
+      setPortalUserMsg({ type: 'success', text: 'Two-factor authentication reset and audited for ' + user.name + '.' });
+      fetchPortalUsers();
+    } catch (err) { setPortalUserMsg({ type: 'error', text: err.message }); }
   };
 
   const deletePortalUser = async (userId) => {
@@ -579,7 +599,7 @@ export default function Clients() {
         )}
 
         <div className="space-y-3 md:hidden">
-          {portalUsers.map(user => <div key={user.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-white">{user.name}</p><p className="break-all text-sm text-gray-400">{user.email}</p><p className="mt-1 text-sm text-gray-500">{user.client_name || 'No client'}</p></div><StatusBadge status={user.is_active ? 'active' : 'disabled'}>{user.is_active ? 'Active' : 'Disabled'}</StatusBadge></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="btn btn-secondary" onClick={() => updatePortalUser(user.id, { is_active: !user.is_active })}>{user.is_active ? 'Disable' : 'Enable'}</button><button className="btn btn-danger" onClick={() => deletePortalUser(user.id)}>Delete user…</button></div></div>)}
+          {portalUsers.map(user => <div key={user.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-white">{user.name}</p><p className="break-all text-sm text-gray-400">{user.email}</p><p className="mt-1 text-sm text-gray-500">{user.client_name || 'No client'}</p><p className="mt-1 text-xs text-gray-400">2FA: {user.two_factor_enabled ? 'Enabled' : 'Disabled'}</p></div><StatusBadge status={user.is_active ? 'active' : 'disabled'}>{user.is_active ? 'Active' : 'Disabled'}</StatusBadge></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="btn btn-secondary" onClick={() => updatePortalUser(user.id, { is_active: !user.is_active })}>{user.is_active ? 'Disable' : 'Enable'}</button>{user.two_factor_enabled && <button className="btn btn-danger" onClick={() => resetPortalUserTwoFactor(user)}>Reset 2FA…</button>}<button className="btn btn-danger" onClick={() => deletePortalUser(user.id)}>Delete user…</button></div></div>)}
         </div>
         <DataTable className="hidden md:block"
           columns={[{ label: 'Name' }, { label: 'Email' }, { label: 'Client' }, { label: 'Role' }, { label: 'Status' }, { label: 'Last Login' }, { label: 'Actions', align: 'right' }]}
@@ -612,6 +632,7 @@ export default function Clients() {
                     >
                       Reset PW
                     </ActionLink>
+                    {u.two_factor_enabled && <ActionLink onClick={() => resetPortalUserTwoFactor(u)} variant="warning" className="text-xs">Reset 2FA</ActionLink>}
                     <ActionLink onClick={() => deletePortalUser(u.id)} variant="danger" className="text-xs">Delete</ActionLink>
                   </div>
                 </td>
@@ -619,6 +640,7 @@ export default function Clients() {
             ))
           )}
         </DataTable>
+        {securityAudit.length > 0 && <div className="section-card-light mt-5"><h3 className="font-semibold text-white">Two-factor reset audit</h3><div className="mt-3 space-y-2">{securityAudit.slice(0, 10).map(event => <div key={event.id} className="rounded-lg border border-white/10 p-3 text-sm"><p className="text-white">Portal user #{event.client_user_id} reset by {event.administrator}</p><p className="mt-1 text-gray-400">{event.reason} · {event.created_at ? new Date(event.created_at).toLocaleString() : 'Unknown time'}</p></div>)}</div></div>}
       </div>
 
 

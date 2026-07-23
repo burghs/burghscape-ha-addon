@@ -17,3 +17,6 @@ loguru==0.7.2
 aiofiles==24.1.0
 weasyprint==69.0
 boto3==1.35.0
+pyotp==2.9.0
+qrcode==8.2
+cryptography==43.0.1

@@ -15,7 +15,7 @@ from sqlalchemy import select, func, update
 
 from config import get_settings
 from database import init_db, engine, async_session
-from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications
+from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications, two_factor
 from middleware import AdminAuthMiddleware
 from admin_auth import admin_auth_router
 from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken
@@ -173,6 +173,8 @@ async def check_stale_instances():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    from two_factor_security import validate_encryption_key
+    validate_encryption_key()
     await init_db()
     logger.info("Database initialized")
     
@@ -258,6 +260,7 @@ app.include_router(campaigns.router, tags=["Campaigns"])
 app.include_router(campaign_popups.router, tags=["Campaign Popups"])
 app.include_router(campaign_notifications.router, tags=["Campaign Notifications"])
 app.include_router(onboarding.router, tags=["Client Onboarding"])
+app.include_router(two_factor.router, tags=["Client Two-Factor Authentication"])
 
 
 # Static files for brand assets

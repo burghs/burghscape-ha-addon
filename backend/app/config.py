@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./burghscape.db"
     REDIS_URL: str = "redis://:burghscape123@redis:6379/0"
     SECRET_KEY: str = "burghscape123"
+    TOTP_ENCRYPTION_KEY: str = ""
     
     CLOUDFLARE_API_TOKEN: str = ""
     CLOUDFLARE_ZONE_ID: str = ""

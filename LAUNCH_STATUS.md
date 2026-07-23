@@ -54,3 +54,14 @@
 - IN PROGRESS — 320/360/375/390/414px portrait acceptance
 - IN PROGRESS — iPhone Safari, Android Chrome, landscape, and Home Assistant webview acceptance
 - BLOCKED — Getting Started COMPLETE status until manual visual acceptance is recorded
+
+## Client two-factor authentication — Phase 1
+
+- COMPLETE — optional RFC 6238 enrollment, encrypted secret storage, and local QR generation
+- COMPLETE — database-backed pre-authentication challenge and rotated portal session
+- COMPLETE — salted single-use recovery-code storage and verification
+- COMPLETE — password-plus-factor client self-disable
+- COMPLETE — reason/confirmation-gated administrator reset and audit history
+- COMPLETE — additive disabled-by-default migration and deployment key gate
+- IN PROGRESS — controlled live client/API validation
+- BLOCKED — COMPLETE status until real authenticator enrollment/login and recovery-code acceptance are signed off

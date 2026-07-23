@@ -70,6 +70,50 @@ class ClientUser(Base):
     campaign_reads = relationship("CampaignReadState", back_populates="user", cascade="all, delete-orphan")
     campaign_popup_events = relationship("CampaignPopupEvent", back_populates="user", cascade="all, delete-orphan")
     onboarding_states = relationship("ClientOnboardingState", back_populates="user", cascade="all, delete-orphan")
+    two_factor_enabled = Column(Boolean, nullable=False, default=False)
+    encrypted_totp_secret = Column(Text)
+    two_factor_enabled_at = Column(DateTime)
+    recovery_codes = relationship("TwoFactorRecoveryCode", back_populates="user", cascade="all, delete-orphan")
+
+class TwoFactorRecoveryCode(Base):
+    __tablename__ = "two_factor_recovery_codes"
+    id = Column(Integer, primary_key=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)
+    used_at = Column(DateTime)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    user = relationship("ClientUser", back_populates="recovery_codes")
+
+class TwoFactorPendingEnrollment(Base):
+    __tablename__ = "two_factor_pending_enrollments"
+    id = Column(Integer, primary_key=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    encrypted_secret = Column(Text, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+class TwoFactorChallenge(Base):
+    __tablename__ = "two_factor_challenges"
+    id = Column(Integer, primary_key=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    used_at = Column(DateTime)
+    invalidated_at = Column(DateTime)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+class SecurityAuditEvent(Base):
+    __tablename__ = "security_audit_events"
+    id = Column(Integer, primary_key=True)
+    administrator = Column(String(255))
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="SET NULL"), index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    action = Column(String(100), nullable=False, index=True)
+    reason = Column(Text)
+    ip_address = Column(String(64))
+    user_agent = Column(String(500))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 class ClientOnboardingState(Base):
     __tablename__ = "client_onboarding_states"
