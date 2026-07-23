@@ -741,8 +741,6 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
             const storageKey = 'burghscape-onboarding-progress-__CLIENT_ID__';
             const pathKey = storageKey + '-setup-path';
             let setupPath = localStorage.getItem(pathKey) || 'self';
-            let current = Math.min(stageCount - 1, Math.max(0, parseInt(localStorage.getItem(storageKey + '-current') || '0', 10)));
-            let completed = new Set(JSON.parse(localStorage.getItem(storageKey) || '[]'));
             const panels = Array.from(document.querySelectorAll('[data-stage]'));
             const tabs = Array.from(document.querySelectorAll('[data-stage-target]'));
             const pathButtons = Array.from(document.querySelectorAll('[data-path-choice]'));
@@ -754,9 +752,25 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
             const next = document.getElementById('next-stage');
             const mark = document.getElementById('mark-stage');
 
+            function savedCompletedStages() {
+                try {
+                    const value = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    return Array.isArray(value) ? value : [];
+                } catch (error) {
+                    return [];
+                }
+            }
             function stageAllowed(index) {
                 const panel = panels[index];
                 return !panel || panel.dataset.path !== 'self' || setupPath === 'self';
+            }
+            function initialStage(completedStages, allowedStages) {
+                const allowed = allowedStages.filter((index) => Number.isInteger(index) && index >= 0 && index < stageCount);
+                if (!allowed.length) return 0;
+                const validCompleted = new Set(completedStages.filter((index) => allowed.includes(index)));
+                if (!validCompleted.size) return allowed[0];
+                const incomplete = allowed.find((index) => !validCompleted.has(index));
+                return incomplete === undefined ? allowed[allowed.length - 1] : incomplete;
             }
             function firstAllowed() {
                 for (let i = 0; i < stageCount; i += 1) if (stageAllowed(i)) return i;
@@ -776,9 +790,11 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
             function visibleStageCount() {
                 return panels.filter((_, index) => stageAllowed(index)).length || stageCount;
             }
+            let completed = new Set(savedCompletedStages().filter((index) => Number.isInteger(index) && index >= 0 && index < stageCount));
+            let current = initialStage(Array.from(completed), panels.map((_, index) => index).filter(stageAllowed));
+            localStorage.removeItem(storageKey + '-current');
             function save() {
                 localStorage.setItem(storageKey, JSON.stringify(Array.from(completed)));
-                localStorage.setItem(storageKey + '-current', String(current));
                 localStorage.setItem(pathKey, setupPath);
             }
             function render() {

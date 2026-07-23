@@ -1,4 +1,6 @@
+import json
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -60,6 +62,33 @@ class GettingStartedUXTests(unittest.TestCase):
             self.assertTrue(href.strip())
         for control in ("prev-stage", "mark-stage", "next-stage", "current-stage-label"):
             self.assertIn(f'id="{control}"', GETTING_STARTED_HTML)
+
+    def test_initial_stage_uses_only_genuine_completion_progress(self):
+        match = re.search(
+            r"(function initialStage\(completedStages, allowedStages\) \{.*?^\s{12}\})",
+            GETTING_STARTED_HTML,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        script = f"""
+const stageCount = 10;
+{match.group(1)}
+const allowed = Array.from({{length: stageCount}}, (_, index) => index);
+console.log(JSON.stringify([
+  initialStage([], allowed),
+  initialStage([0, 1, 2], allowed),
+  initialStage(allowed, allowed)
+]));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(json.loads(result.stdout), [0, 3, 9])
+        self.assertNotIn("getItem(storageKey + '-current')", GETTING_STARTED_HTML)
+        self.assertNotIn("setItem(storageKey + '-current'", GETTING_STARTED_HTML)
 
 
 if __name__ == "__main__":
