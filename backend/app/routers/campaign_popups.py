@@ -72,7 +72,7 @@ async def track(request,db,campaign_id,event_type,body):
     try:revision=int(revision)
     except ValueError:raise HTTPException(422,"Occurrence revision is invalid")
     c=await available(db,campaign_id,user,revision)
-    if event_type=="action_clicked" and not (c.call_to_action_label and c.call_to_action_url):raise HTTPException(409,"Notification has no primary action")
+    if event_type=="action_clicked" and not client_action_url(c):raise HTTPException(409,"Notification has no primary action")
     state=await state_for(db,c,user.id,True);now=now_utc()
     existing=(await db.execute(select(CampaignPopupEvent.id).where(CampaignPopupEvent.campaign_id==c.id,CampaignPopupEvent.client_user_id==user.id,CampaignPopupEvent.delivery_revision==revision,CampaignPopupEvent.event_type==event_type,CampaignPopupEvent.occurrence_id==body.occurrence_id))).scalar()
     if existing:return {"status":event_type,"revision":revision}
