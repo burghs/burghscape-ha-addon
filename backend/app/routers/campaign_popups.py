@@ -9,7 +9,7 @@ from admin_auth import get_current_admin
 from database import get_db
 from models import Campaign, CampaignPopupEvent, CampaignPopupState, CampaignReadState
 from routers.onboarding import current_state
-from routers.campaigns import now_utc, portal_user, visible_campaign, visible_clause
+from routers.campaigns import client_action_url, now_utc, portal_user, visible_campaign, visible_clause
 
 router=APIRouter()
 EVENTS={"displayed","snoozed","dismissed","opened","action_clicked"}
@@ -21,9 +21,9 @@ def session_hash(request):
     return sha256(request.cookies.get("portal_token","").encode()).hexdigest()
 
 def popup_payload(c):
-    has=bool(c.call_to_action_label and c.call_to_action_url)
-    action_url=f"/portal/whats-new?campaign_id={c.id}" if c.call_to_action_type=="details" else c.call_to_action_url
-    return {"id":c.id,"revision":c.delivery_revision,"title":c.title,"summary":c.popup_summary or c.subtitle or c.body_content[:240],"campaign_type":c.campaign_type,"popup_behavior":c.popup_behavior,"image_url":f"/api/portal/campaigns/{c.id}/image" if c.image_reference else None,"details_url":f"/portal/whats-new?campaign_id={c.id}","call_to_action_label":c.call_to_action_label if has else None,"call_to_action_url":action_url if has else None}
+    action_url=client_action_url(c)
+    has=bool(c.call_to_action_label and action_url)
+    return {"id":c.id,"revision":c.delivery_revision,"title":c.title,"summary":c.popup_summary or c.subtitle or c.body_content[:240],"campaign_type":c.campaign_type,"campaign_type_label":c.campaign_type.replace("_"," ").title(),"price_text":c.price_text,"regular_price_text":c.regular_price_text,"popup_behavior":c.popup_behavior,"image_url":f"/api/portal/campaigns/{c.id}/image" if c.image_reference else None,"details_url":f"/portal/whats-new?campaign_id={c.id}","call_to_action_label":c.call_to_action_label if has else None,"call_to_action_url":action_url if has else None}
 
 async def state_for(db,campaign,user_id,create=False):
     state=(await db.execute(select(CampaignPopupState).where(CampaignPopupState.campaign_id==campaign.id,CampaignPopupState.client_user_id==user_id,CampaignPopupState.delivery_revision==campaign.delivery_revision))).scalars().first()
@@ -32,13 +32,16 @@ async def state_for(db,campaign,user_id,create=False):
         db.add(state);await db.flush()
     return state
 
+def state_block_reason(c,state,request,now):
+    if not state:return None
+    if state.acknowledged_at:return "acknowledged:"+(state.acknowledgment_type or "unknown")
+    if c.popup_behavior=="once" and state.last_displayed_at:return "show-once impression already recorded"
+    if state.snoozed_until and state.snoozed_until>now:return "snoozed until "+state.snoozed_until.isoformat()+"Z"
+    if c.popup_behavior=="next_login" and state.snoozed_session_hash==session_hash(request):return "snoozed for current session"
+    return None
+
 def state_allows(c,state,request,now):
-    if not state:return True
-    if state.acknowledged_at:return False
-    if c.popup_behavior=="once" and state.last_displayed_at:return False
-    if state.snoozed_until and state.snoozed_until>now:return False
-    if c.popup_behavior=="next_login" and state.snoozed_session_hash==session_hash(request):return False
-    return True
+    return state_block_reason(c,state,request,now) is None
 
 @router.get("/api/portal/promotions/login-popup")
 async def login_popup(request:Request,db:AsyncSession=Depends(get_db)):
@@ -47,10 +50,13 @@ async def login_popup(request:Request,db:AsyncSession=Depends(get_db)):
     if onboarding is None or onboarding.status in {"not_started","in_progress"} or onboarding.replay_active:return {"promotion":None,"suppressed_by_onboarding":True}
     now=now_utc()
     campaigns=(await db.execute(select(Campaign).where(visible_clause(user.client_id,now),Campaign.popup_enabled==True).order_by(Campaign.priority.desc(),Campaign.id.desc()))).scalars().all()
+    blocked=[]
     for campaign in campaigns:
         state=await state_for(db,campaign,user.id)
-        if state_allows(campaign,state,request,now):return {"promotion":popup_payload(campaign)}
-    return {"promotion":None}
+        reason=state_block_reason(campaign,state,request,now)
+        if reason is None:return {"promotion":popup_payload(campaign),"suppression_reason":None}
+        blocked.append({"id":campaign.id,"revision":campaign.delivery_revision,"reason":reason})
+    return {"promotion":None,"suppression_reason":blocked[0] if blocked else "no eligible popup campaign"}
 
 async def available(db,campaign_id,user,revision):
     c=await visible_campaign(db,campaign_id,user)

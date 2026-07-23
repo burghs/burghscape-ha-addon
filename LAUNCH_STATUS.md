@@ -10,10 +10,10 @@
 | RC1.4.3 frontend deployment | COMPLETE |
 | Authentication and client isolation | COMPLETE |
 | Campaign lifecycle and What’s New | COMPLETE |
-| Login popup engine, verified no-refresh discovery, 30-second polling, responsive overlay, and metrics | COMPLETE |
+| Popup notification engine: corrected coordinator, CTA, resend, cache busting, SSE plus 15-second fallback | IN PROGRESS |
 | Onboarding start/resume/skip/complete/replay | COMPLETE |
 | Existing-user onboarding backfill | COMPLETE |
-| Theme and responsive component behavior | COMPLETE |
+| Theme and responsive component behavior | IN PROGRESS |
 | Backup/storage/tunnel/support regression | IN PROGRESS |
 | Subscription tokens and tier/support presentation | COMPLETE |
 | Automated billing and self-service subscription changes | BLOCKED |
@@ -26,9 +26,19 @@
 - COMPLETE — revision-scoped popup lifecycle and historical analytics preservation
 - COMPLETE — temporary close versus permanent dismissal semantics
 - COMPLETE — next-login/delayed/until-acknowledged/show-once reminder policies
-- COMPLETE — authenticated SSE availability notification with 30-second polling fallback
+- IN PROGRESS — authenticated SSE availability notification with 15-second polling fallback; awaiting real-browser sign-off
 - COMPLETE — intentional resend action with administrator/time audit fields
 - COMPLETE — revision-aware unread/read state
-- COMPLETE — responsive, keyboard-accessible Remind me later and Dismiss actions
+- IN PROGRESS — responsive, keyboard-accessible popup and Getting Started layout; awaiting desktop/mobile manual sign-off
 - COMPLETE — migration included in backup-first documented deployment
 - IN PROGRESS — final real-client browser sign-off across supported Home Assistant webviews
+
+## Production-blocking manual acceptance
+
+- IN PROGRESS — actual desktop popup visibility after publish
+- IN PROGRESS — actual mobile/webview popup visibility and controls
+- IN PROGRESS — support CTA opens and prepopulates the live ticket workflow
+- IN PROGRESS — resend produces one visible modal and one new-revision impression
+- IN PROGRESS — Getting Started desktop/mobile visual sign-off
+- COMPLETE — safe browser diagnostics and commit-versioned campaign assets
+- BLOCKED — final notification/Getting Started completion status until the user completes the manual checklist

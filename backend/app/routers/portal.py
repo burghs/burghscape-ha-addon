@@ -25,6 +25,7 @@ PORTAL_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mybeacon-build" content="{build_commit}">
     <script src="/static/theme.js"></script>
     <title>{client_name} - Burghscape Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -173,7 +174,7 @@ PORTAL_HTML = """<!DOCTYPE html>
             <div class="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 class="font-semibold text-white">Home Assistant local backups</h3>{native_backup_html}</div>
         </section>
 
-        <section data-onboarding-target="support" class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
+        <section id="support" data-onboarding-target="support" class="card portal-card p-5 sm:p-6" aria-labelledby="support-heading">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="support-heading" class="text-lg font-semibold text-white">Account &amp; Support</h2><p class="text-sm text-gray-500 mt-1">Support usage, tickets and diagnostic report</p></div><a href="/portal/getting-started" class="text-sm text-purple-300">Getting Started</a></div>
             <div class="metric-grid mt-5 text-sm"><div class="metric-tile"><div class="text-gray-500">Included support</div><div class="text-white mt-1">{hours_included}h</div></div><div class="metric-tile"><div class="text-gray-500">Support time logged</div><div class="text-white mt-1">{hours_logged}h</div></div>{support_remaining_html}<div class="metric-tile"><div class="text-gray-500">Potentially billable</div><div class="text-white mt-1">{hours_billable}h</div></div><div class="metric-tile"><div class="text-gray-500">Open tickets</div><div class="text-white mt-1">{open_ticket_count}</div></div><div class="metric-tile"><div class="text-gray-500">Latest ticket</div><div class="text-white mt-1">{latest_ticket_status}</div></div></div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5"><button type="button" onclick="document.getElementById('ticket-form').classList.toggle('hidden')" class="compact-action">New Support Ticket</button><a href="mailto:support@mybeacon.co.za" class="touch-action border border-white/10 text-white">Contact Support</a><a href="/api/portal/report" target="_blank" class="touch-action border border-white/10 text-white">Download Report</a></div>
@@ -315,21 +316,24 @@ PORTAL_HTML = """<!DOCTYPE html>
         }}
     </script>
     <div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
-    <script src="/static/onboarding.js"></script>
+    <script>window.addEventListener("load",function(){{const p=new URLSearchParams(window.location.search);const campaign=p.get("support_campaign");if(!campaign)return;const section=document.getElementById("support"),form=document.getElementById("ticket-form"),title=document.getElementById("ticket-title"),description=document.getElementById("ticket-desc");if(form)form.classList.remove("hidden");if(title&&!title.value)title.value="Campaign enquiry #"+campaign;if(description&&!description.value)description.value="I would like help with campaign #"+campaign+" (delivery revision "+(p.get("revision")||"unknown")+").";if(section)section.scrollIntoView({{behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}})}});</script>
+    <script src="/static/onboarding.js?v={build_commit}"></script>
     <div id="login-promotion-modal" class="campaign-modal-backdrop modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
         <div role="document" tabindex="-1" class="campaign-modal-card modal-card p-5 sm:p-7">
             <div class="flex justify-end"><button type="button" data-popup-snooze class="touch-action" aria-label="Remind me later">Close</button></div>
             <img id="login-promotion-image" class="campaign-modal-image hidden mt-2 rounded-xl" alt="">
+            <p id="login-promotion-type" class="mt-4 text-xs font-semibold uppercase tracking-wider text-purple-300"></p>
             <h2 id="login-promotion-title" class="mt-4 text-2xl font-bold text-white"></h2>
             <p id="login-promotion-summary" class="mt-3 whitespace-pre-line text-gray-300"></p>
+            <p id="login-promotion-price" class="hidden mt-4 text-2xl font-bold text-purple-300"></p>
             <div class="campaign-modal-actions mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <button id="login-promotion-snooze" type="button" class="touch-action">Remind me later</button>
-                <button id="login-promotion-dismiss" type="button" class="touch-action">Dismiss</button>
+                <button id="login-promotion-dismiss" type="button" class="touch-action">Dismiss / Mark as read</button>
                 <button id="login-promotion-primary" type="button" class="btn-primary hidden min-h-11 rounded-xl px-5 py-2.5 font-semibold text-white"></button>
             </div>
         </div>
     </div>
-    <script src="/static/campaign-popup.js"></script>
+    <script src="/static/campaign-popup.js?v={build_commit}"></script>
 </body>
 </html>
 """
@@ -567,8 +571,10 @@ GETTING_STARTED_HTML = """<!DOCTYPE html>
         .mobile-card { border-radius:20px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.045); padding:20px; }
         .completion-card { border-radius:18px; border:1px solid rgba(52,211,153,0.22); background:rgba(16,185,129,0.09); padding:16px; }
         .remote-url { word-break:break-all; color:#c4b5fd; }
-        @media (max-width: 900px) { .stage-shell { grid-template-columns:1fr; } .stage-list { position:static; } .stage-nav { display:flex; overflow-x:auto; gap:8px; padding-bottom:6px; -webkit-overflow-scrolling:touch; } .stage-tab { min-width:170px; flex:0 0 auto; } }
-        @media (max-width: 640px) { body { min-height:100dvh; } main { padding-left:max(1rem, env(safe-area-inset-left)); padding-right:max(1rem, env(safe-area-inset-right)); } .hero { border-radius:22px; } .hero h1 { font-size:2.25rem; } .stage-panel { border-radius:18px; } .stage-tab { min-width:145px; padding:9px; } .stage-number { width:24px; height:24px; } .media-card { min-height:210px; padding:18px; } .data-field .mt-2, .stage-panel .mt-5.flex { flex-wrap:wrap; } .copy-button, .btn-primary, .btn-secondary { min-height:44px; } .field-value { flex-basis:100%; font-size:12px; } }
+        .stage-panel img, .media-card img { max-width:100%; height:auto; } .stage-panel pre, .stage-panel code { max-width:100%; overflow-wrap:anywhere; } .stage-panel pre { overflow-x:auto; white-space:pre; } .stage-panel table { width:100%; display:block; overflow-x:auto; }
+        @media (max-width: 900px) { .stage-shell { grid-template-columns:minmax(0,1fr); } .stage-list { position:static; min-width:0; } .stage-nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .stage-tab { min-width:0; width:100%; } }
+        @media (max-width: 640px) { body { min-height:100dvh; font-size:16px; } nav>div { flex-wrap:wrap; } main { width:100%; padding:12px max(12px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); } .hero { border-radius:18px; padding:20px 16px !important; } .hero:before { width:280px; height:280px; } .hero h1 { font-size:1.9rem; line-height:1.15; overflow-wrap:anywhere; } .hero p.text-xl { font-size:1.15rem; } .stage-shell, .stage-shell>*, .stage-panel, .stage-panel>* { min-width:0; max-width:100%; } .stage-list { padding:12px; border-radius:18px !important; } .stage-nav { grid-template-columns:1fr; max-height:240px; overflow-y:auto; overscroll-behavior:contain; } .stage-tab { padding:10px; min-height:44px; } .stage-tab.hidden { display:none; } .stage-number { width:26px; height:26px; flex:0 0 auto; } .stage-panel { border-radius:16px; padding:18px 15px !important; overflow:hidden; } .stage-panel h2 { font-size:1.65rem !important; line-height:1.2; overflow-wrap:anywhere; } .stage-panel h3 { font-size:1.2rem !important; } .stage-panel p, .stage-panel li { line-height:1.65; } .stage-panel ol, .stage-panel ul { padding-left:1.25rem; list-style-position:outside; } .media-card { min-height:140px; padding:14px; border-radius:14px; } .mobile-card, .data-field, .callout { padding:13px; border-radius:14px; } .data-field .mt-2, .stage-panel .mt-5.flex { flex-direction:column; align-items:stretch; } .copy-button, .btn-primary, .btn-secondary { width:100%; min-height:46px; white-space:normal; text-align:center; } .field-value { flex-basis:auto; width:100%; font-size:12px; } #setup>.min-w-0>.mt-5 { display:grid; grid-template-columns:1fr; } }
+        @media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation-duration:.01ms !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
     </style>
     <link rel="stylesheet" href="/static/theme.css">
 </head>
@@ -1519,7 +1525,8 @@ async def client_portal(request: Request):
             native_items.append('<p class="mt-2 text-sm text-gray-400">Detailed Home Assistant scheduling information is unavailable.</p>')
         native_backup_html = "".join(native_items)
 
-        return PORTAL_HTML.format(
+        return HTMLResponse(PORTAL_HTML.format(
+            build_commit=escape(os.environ.get("BUILD_COMMIT", "development"), quote=True),
             onboarding_banner_html=onboarding_banner_html,
             setup_nav_label=setup_nav_label,
             setup_nav_class=setup_nav_class,
@@ -1576,4 +1583,4 @@ async def client_portal(request: Request):
             local_backup_count=local_backup_count,
             backup_encryption_status=backup_encryption_status,
 
-        )
+        ), headers={"Cache-Control":"no-store"})

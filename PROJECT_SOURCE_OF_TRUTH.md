@@ -132,3 +132,9 @@ Implemented campaign functionality includes admin lifecycle, targeting, client W
 ## Campaign notification lifecycle (RC1.4.3 launch consolidation)
 
 Published eligible campaigns always use What’s New; popup notification is optional. Popup availability uses an authenticated SSE wake-up for normal 2–5 second online discovery and a 30-second poll/visibility check as recovery. Display impressions are analytics, temporary close is a snooze, dismissal/action are acknowledgements, and deliberate resend creates a new delivery revision without deleting history. See `CAMPAIGN_NOTIFICATION_BEHAVIOUR.md` for the authoritative state and analytics contract.
+
+## Campaign browser delivery correction (2026-07-23)
+
+The authoritative online-delivery contract is authenticated SSE as the fast signal plus a visible-tab 15-second polling fallback. The popup coordinator performs an immediate load/visibility check and never relies solely on a one-shot onboarding browser event; the backend onboarding state is authoritative. Portal HTML is `no-store`, and portal campaign scripts are cache-busted with the exact deployed commit because Cloudflare browser cache TTL may be four hours. Use `window.MyBeaconCampaignDiagnostics.getState()` in an authenticated client console to distinguish stale build, disconnected SSE, poll timing, API suppression, JavaScript errors, and modal state.
+
+Support CTAs use the existing client support-ticket form with campaign/revision context. What’s New and popup views both render safe CTA fields. Only drafts may be deleted; delivered campaigns are archived. Campaign email remains post-v1 until a revision-scoped queue and per-recipient outcome model exist.

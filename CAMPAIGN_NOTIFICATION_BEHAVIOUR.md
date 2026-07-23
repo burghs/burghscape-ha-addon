@@ -30,3 +30,37 @@ The API records an explicit CTA action type and only accepts approved portal rou
 ## Operational verification
 
 Verify `/api/portal/promotions/events` returns an authenticated event stream, `/api/portal/promotions/login-popup` returns only the current revision, and `campaign_popup_states`, event `delivery_revision`, and read-state `delivery_revision` exist after deployment. The deployment script backs up PostgreSQL before applying the idempotent migration.
+
+## Production browser correction (2026-07-23)
+
+Manual browser validation found that the popup coordinator could remain locally suppressed when it missed the one-shot onboarding-ready event. The coordinator now starts eligible to check, while the authenticated backend remains the authoritative onboarding guard. It checks immediately on load and visibility, uses authenticated SSE as the fast wake-up, and polls every 15 seconds as the authoritative recovery mechanism. Normal SSE delivery remains a few seconds; the documented fallback maximum is approximately 15 seconds while the tab is visible.
+
+Portal HTML is returned with `Cache-Control: no-store`. Campaign, onboarding, and What’s New scripts include the exact Platform build commit in their query string, preventing the four-hour Cloudflare browser-cache setting from retaining an older coordinator after deployment. There is no service worker.
+
+The popup and What’s New detail views render campaign type, image, title, summary/body, prices, and a configured primary CTA. Support CTAs open the existing dashboard support-ticket form and prepopulate a campaign/revision reference. Popup close, Escape, and backdrop remain temporary snooze actions; **Dismiss / Mark as read** is permanent for that revision.
+
+Client-side diagnostics are available in the authenticated dashboard console without secrets:
+
+```js
+window.MyBeaconCampaignDiagnostics.getState()
+window.MyBeaconCampaignDiagnostics.checkNow()
+```
+
+The state reports script version, Platform build commit, SSE connection state, last SSE event, last poll, latest popup API result/suppression reason, last JavaScript error, and modal visibility.
+
+Archived campaigns are retained for audit and hidden from the default active management list. Only drafts may be permanently deleted. Published/unpublished campaigns must be archived; resend creates a revision and cannot be double-submitted within five seconds.
+
+Email notification is deferred until after v1. Existing SMTP helpers do not provide revision-scoped queued delivery, per-user outcome tracking, or failure isolation adequate for launch. Email is not a substitute for portal delivery.
+
+## Manual acceptance checklist
+
+1. Hard-refresh the authenticated dashboard once after deployment and confirm `getState().buildCommit` matches `/health`.
+2. Publish an immediate popup campaign while the visible portal remains open.
+3. Confirm the modal appears within a few seconds through SSE or no later than 15 seconds through polling.
+4. Confirm campaign type, image, price, summary, CTA, Remind me later, Dismiss / Mark as read, and close icon are visible.
+5. Close temporarily and confirm unread remains; test the configured reminder policy.
+6. Use the support CTA and confirm the dashboard support form opens with campaign/revision context.
+7. Dismiss and confirm the unread count falls and the same revision does not return.
+8. Resend from admin, confirm the displayed revision increments, and confirm one new modal/impression appears.
+9. Repeat at desktop, tablet, iPhone/Android width, and Home Assistant webview width.
+10. Review every Getting Started stage with no horizontal page scrolling and usable bottom navigation.

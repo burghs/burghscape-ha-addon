@@ -71,11 +71,13 @@ class RC141CampaignTests(unittest.TestCase):
         self.assertEqual(client.post("/api/admin/campaigns", json={}).status_code, 401)
         self.assertEqual(client.post("/api/admin/campaigns/1/image").status_code, 401)
 
-    def test_client_payload_excludes_internal_fields_and_cta(self):
+    def test_client_payload_excludes_internal_fields_and_includes_safe_cta(self):
         item = Campaign(id=7, internal_name="internal", title="Safe", campaign_type="tip", body_content="Plain text", status="published", created_by="admin", updated_by="admin", target_all_clients=True)
         data = campaigns.client_payload(item, False)
-        for key in ("internal_name", "image_reference", "created_by", "updated_by", "target_all_clients", "target_client_ids", "call_to_action_label"):
+        for key in ("internal_name", "image_reference", "created_by", "updated_by", "target_all_clients", "target_client_ids"):
             self.assertNotIn(key, data)
+        self.assertIn("call_to_action_label", data)
+        self.assertIn("call_to_action_url", data)
         self.assertFalse(data["is_read"])
 
     def test_visibility_targeting_dates_and_read_state(self):
@@ -157,7 +159,7 @@ class RC141CampaignTests(unittest.TestCase):
 
     def test_client_script_marks_read_only_after_detail_load(self):
         script = (ROOT / "app/static/campaigns-client.js").read_text()
-        detail_fetch = script.index('fetch("/api/portal/campaigns/"+id,{credentials:"include"})')
+        detail_fetch = script.index('fetch("/api/portal/campaigns/"+id,{credentials:"include",cache:"no-store"})')
         read_fetch = script.index('fetch("/api/portal/campaigns/"+id+"/read"')
         self.assertLess(detail_fetch, read_fetch)
         self.assertNotIn("innerHTML", script)

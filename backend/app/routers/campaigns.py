@@ -11,7 +11,7 @@ import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, delete, exists, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin_auth import get_current_admin
@@ -111,6 +111,13 @@ async def target_ids(db: AsyncSession, campaign_id: int) -> list[int]:
     return list((await db.execute(select(CampaignTarget.client_id).where(CampaignTarget.campaign_id == campaign_id))).scalars().all())
 
 
+async def eligible_recipient_count(db: AsyncSession, campaign: Campaign) -> int:
+    query=select(func.count(func.distinct(Client.id))).join(ClientUser, ClientUser.client_id == Client.id).where(ClientUser.is_active == True, Client.status == ClientStatus.ACTIVE)
+    if not campaign.target_all_clients:
+        query=query.where(exists(select(CampaignTarget.campaign_id).where(CampaignTarget.campaign_id == campaign.id, CampaignTarget.client_id == ClientUser.client_id)))
+    return int((await db.execute(query)).scalar() or 0)
+
+
 def delivery_status(campaign: Campaign) -> str:
     now = now_utc()
     if campaign.status == "archived": return "archived"
@@ -147,18 +154,32 @@ def admin_payload(campaign: Campaign, targets: list[int]) -> dict:
     }
 
 
+def client_action_url(campaign: Campaign) -> Optional[str]:
+    if not campaign.call_to_action_label:
+        return None
+    if campaign.call_to_action_type == "details":
+        return f"/portal/whats-new?campaign_id={campaign.id}"
+    if campaign.call_to_action_type == "support":
+        return f"/portal?support_campaign={campaign.id}&revision={campaign.delivery_revision}#support"
+    return campaign.call_to_action_url or None
+
+
 def client_payload(campaign: Campaign, is_read: bool) -> dict:
     return {
-        "id": campaign.id, "title": campaign.title, "subtitle": campaign.subtitle,
+        "id": campaign.id, "delivery_revision": campaign.delivery_revision, "title": campaign.title, "subtitle": campaign.subtitle,
         "campaign_type": campaign.campaign_type,
         "campaign_type_label": TYPES.get(campaign.campaign_type, campaign.campaign_type),
         "body_content": campaign.body_content, "price_text": campaign.price_text,
         "regular_price_text": campaign.regular_price_text,
+        "call_to_action_type": campaign.call_to_action_type,
+        "call_to_action_label": campaign.call_to_action_label,
+        "call_to_action_url": client_action_url(campaign),
         "has_image": bool(campaign.image_reference),
         "image_url": f"/api/portal/campaigns/{campaign.id}/image" if campaign.image_reference else None,
         "published_at": campaign.published_at.isoformat() if campaign.published_at else None,
         "starts_at": api_datetime(campaign.starts_at),
         "ends_at": api_datetime(campaign.ends_at),
+        "popup_enabled": campaign.popup_enabled,
         "is_read": is_read,
     }
 
@@ -313,17 +334,28 @@ async def archive(campaign_id: int, admin: dict = Depends(get_current_admin), db
 
 @router.post("/api/admin/campaigns/{campaign_id}/resend-popup")
 async def resend_popup(campaign_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
-    campaign = await campaign_or_404(db, campaign_id)
+    campaign = (await db.execute(select(Campaign).where(Campaign.id == campaign_id).with_for_update())).scalars().first()
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
     if campaign.status != "published" or not campaign.popup_enabled:
         raise HTTPException(409, "Only published popup campaigns can be resent")
+    current_time=now_utc()
+    if campaign.last_resent_at and (current_time-campaign.last_resent_at).total_seconds() < 5:
+        raise HTTPException(409, "A popup resend was already created moments ago")
+    recipients=await eligible_recipient_count(db, campaign)
+    if recipients == 0:
+        raise HTTPException(409, "No active clients are eligible for this campaign")
     campaign.delivery_revision += 1
-    campaign.last_resent_at = now_utc()
+    campaign.last_resent_at = current_time
     campaign.last_resent_by = admin["username"]
     campaign.updated_at = now_utc()
     await db.commit()
     from routers.campaign_notifications import notify_campaign_available
     await notify_campaign_available()
-    return admin_payload(campaign, await target_ids(db, campaign.id))
+    payload=admin_payload(campaign, await target_ids(db, campaign.id))
+    payload["eligible_recipients"]=recipients
+    payload["resend_created"]=True
+    return payload
 
 
 def media_root() -> Path:
@@ -486,9 +518,10 @@ async def portal_image(campaign_id: int, request: Request, db: AsyncSession = De
         raise HTTPException(404, "Campaign not found")
     return await media_response(campaign)
 
-WHATS_NEW_HTML = """<!doctype html><html lang="en" data-theme-enabled><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="/static/theme.js"></script><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/static/theme.css"><title>What’s New - Burghscape</title><style>.campaign-body{white-space:pre-line}.modal-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(3,7,18,.8)}.modal-layer[hidden]{display:none}.modal-panel{max-height:calc(100dvh - 2rem);overflow:auto}.campaign-image{aspect-ratio:16/7;object-fit:cover}@media(max-width:640px){.details-button{width:100%;min-height:44px}}</style></head><body class="min-h-screen bg-gray-950 text-gray-200 bg-grid"><nav class="card border-b border-white/10 px-4 py-3"><div class="mx-auto flex max-w-6xl items-center justify-between gap-3"><a href="/portal" class="flex items-center gap-3"><img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="h-10 w-10"><span class="font-semibold text-white">Burghscape Client Portal</span></a><div class="flex gap-2"><a href="/portal" class="touch-action text-gray-300">Dashboard</a><a href="/portal/logout" class="touch-action text-gray-300">Logout</a></div></div></nav><main class="mx-auto max-w-6xl px-4 py-6 sm:px-6"><p class="text-sm font-semibold uppercase tracking-[.16em] text-purple-300">Client updates</p><h1 class="mt-2 text-3xl font-bold text-white">What’s New</h1><p class="mt-2 text-gray-400">Announcements, service updates, maintenance notices, and useful tips from Burghscape.</p><div id="campaign-list" class="mt-6 grid gap-4 md:grid-cols-2"><p class="text-gray-400">Loading updates…</p></div></main><div id="campaign-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="campaign-title"><div class="modal-panel card w-full max-w-2xl p-5 sm:p-7" tabindex="-1"><div class="flex justify-end"><button id="campaign-close" type="button" class="touch-action" aria-label="Close campaign details">Close</button></div><div id="campaign-detail"></div></div></div><script src="/static/campaigns-client.js"></script></body></html>"""
+WHATS_NEW_HTML = """<!doctype html><html lang="en" data-theme-enabled><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="mybeacon-build" content="__BUILD_COMMIT__"><script src="/static/theme.js"></script><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/static/theme.css"><title>What’s New - Burghscape</title><style>.campaign-body{white-space:pre-line}.modal-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(3,7,18,.8)}.modal-layer[hidden]{display:none}.modal-panel{max-height:calc(100dvh - 2rem);overflow:auto}.campaign-image{aspect-ratio:16/7;object-fit:cover}@media(max-width:640px){.details-button{width:100%;min-height:44px}}</style></head><body class="min-h-screen bg-gray-950 text-gray-200 bg-grid"><nav class="card border-b border-white/10 px-4 py-3"><div class="mx-auto flex max-w-6xl items-center justify-between gap-3"><a href="/portal" class="flex items-center gap-3"><img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="h-10 w-10"><span class="font-semibold text-white">Burghscape Client Portal</span></a><div class="flex gap-2"><a href="/portal" class="touch-action text-gray-300">Dashboard</a><a href="/portal/logout" class="touch-action text-gray-300">Logout</a></div></div></nav><main class="mx-auto max-w-6xl px-4 py-6 sm:px-6"><p class="text-sm font-semibold uppercase tracking-[.16em] text-purple-300">Client updates</p><h1 class="mt-2 text-3xl font-bold text-white">What’s New</h1><p class="mt-2 text-gray-400">Announcements, service updates, maintenance notices, and useful tips from Burghscape.</p><div id="campaign-list" class="mt-6 grid gap-4 md:grid-cols-2"><p class="text-gray-400">Loading updates…</p></div></main><div id="campaign-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="campaign-title"><div class="modal-panel card w-full max-w-2xl p-5 sm:p-7" tabindex="-1"><div class="flex justify-end"><button id="campaign-close" type="button" class="touch-action" aria-label="Close campaign details">Close</button></div><div id="campaign-detail"></div></div></div><script src="/static/campaigns-client.js?v=__BUILD_COMMIT__"></script></body></html>"""
 
 @router.get("/portal/whats-new", response_class=HTMLResponse)
 async def whats_new_page(request: Request, db: AsyncSession = Depends(get_db)):
     await portal_user(request, db)
-    return HTMLResponse(WHATS_NEW_HTML)
+    build=os.environ.get("BUILD_COMMIT", "development")
+    return HTMLResponse(WHATS_NEW_HTML.replace("__BUILD_COMMIT__", escape(build, quote=True)), headers={"Cache-Control":"no-store"})

@@ -170,7 +170,7 @@ class RC142CampaignPopupTests(unittest.TestCase):
         self.assertIn("Resend popup notification?",admin)
         self.assertIn('e.key==="Escape"',popup)
         self.assertIn('e.key!=="Tab"',popup)
-        self.assertIn('POLL_MS=30000',popup)
+        self.assertIn('POLL_MS=15000',popup)
         self.assertIn('setInterval',popup)
         self.assertIn('campaign-popup-open',popup)
         self.assertIn('.campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80',portal)
