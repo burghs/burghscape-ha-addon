@@ -42,3 +42,15 @@
 - IN PROGRESS — Getting Started desktop/mobile visual sign-off
 - COMPLETE — safe browser diagnostics and commit-versioned campaign assets
 - BLOCKED — final notification/Getting Started completion status until the user completes the manual checklist
+
+## Getting Started production-readiness
+
+- COMPLETE — ten-stage content and navigation audit
+- COMPLETE — nine empty screenshot slots replaced with responsive instructional illustrations
+- COMPLETE — mobile horizontal stage navigation and persistent stage actions
+- COMPLETE — responsive text, list, code, table, image, safe-area, and reduced-motion contracts
+- COMPLETE — visual replacement inventory in `GETTING_STARTED_VISUALS.md`
+- IN PROGRESS — desktop and 768/1024px manual visual acceptance
+- IN PROGRESS — 320/360/375/390/414px portrait acceptance
+- IN PROGRESS — iPhone Safari, Android Chrome, landscape, and Home Assistant webview acceptance
+- BLOCKED — Getting Started COMPLETE status until manual visual acceptance is recorded
