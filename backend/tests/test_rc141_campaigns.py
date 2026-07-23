@@ -48,6 +48,10 @@ class FailingCommitDB:
 
 
 class RC141CampaignTests(unittest.TestCase):
+    def test_whats_new_build_marker_dependency_is_available(self):
+        with patch.dict(campaigns.os.environ, {"BUILD_COMMIT": "test<commit>"}):
+            self.assertEqual(campaigns.whats_new_build_commit(), "test&lt;commit&gt;")
+
     def test_campaign_api_normalizes_offset_timestamps_to_utc(self):
         local = datetime(2026, 7, 22, 19, 0, tzinfo=timezone(timedelta(hours=2)))
         self.assertEqual(campaigns.database_datetime(local), datetime(2026, 7, 22, 17, 0))

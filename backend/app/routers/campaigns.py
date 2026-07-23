@@ -1,5 +1,6 @@
 """RC1.4.1 campaign administration, targeting, media, and client read-state APIs."""
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlparse
@@ -518,10 +519,12 @@ async def portal_image(campaign_id: int, request: Request, db: AsyncSession = De
         raise HTTPException(404, "Campaign not found")
     return await media_response(campaign)
 
+def whats_new_build_commit():
+    return escape(os.environ.get("BUILD_COMMIT", "development"), quote=True)
+
 WHATS_NEW_HTML = """<!doctype html><html lang="en" data-theme-enabled><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="mybeacon-build" content="__BUILD_COMMIT__"><script src="/static/theme.js"></script><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/static/theme.css"><title>What’s New - Burghscape</title><style>.campaign-body{white-space:pre-line}.modal-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(3,7,18,.8)}.modal-layer[hidden]{display:none}.modal-panel{max-height:calc(100dvh - 2rem);overflow:auto}.campaign-image{aspect-ratio:16/7;object-fit:cover}@media(max-width:640px){.details-button{width:100%;min-height:44px}}</style></head><body class="min-h-screen bg-gray-950 text-gray-200 bg-grid"><nav class="card border-b border-white/10 px-4 py-3"><div class="mx-auto flex max-w-6xl items-center justify-between gap-3"><a href="/portal" class="flex items-center gap-3"><img src="/static/brand/burghscape-shield.svg" alt="Burghscape" class="h-10 w-10"><span class="font-semibold text-white">Burghscape Client Portal</span></a><div class="flex gap-2"><a href="/portal" class="touch-action text-gray-300">Dashboard</a><a href="/portal/logout" class="touch-action text-gray-300">Logout</a></div></div></nav><main class="mx-auto max-w-6xl px-4 py-6 sm:px-6"><p class="text-sm font-semibold uppercase tracking-[.16em] text-purple-300">Client updates</p><h1 class="mt-2 text-3xl font-bold text-white">What’s New</h1><p class="mt-2 text-gray-400">Announcements, service updates, maintenance notices, and useful tips from Burghscape.</p><div id="campaign-list" class="mt-6 grid gap-4 md:grid-cols-2"><p class="text-gray-400">Loading updates…</p></div></main><div id="campaign-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="campaign-title"><div class="modal-panel card w-full max-w-2xl p-5 sm:p-7" tabindex="-1"><div class="flex justify-end"><button id="campaign-close" type="button" class="touch-action" aria-label="Close campaign details">Close</button></div><div id="campaign-detail"></div></div></div><script src="/static/campaigns-client.js?v=__BUILD_COMMIT__"></script></body></html>"""
 
 @router.get("/portal/whats-new", response_class=HTMLResponse)
 async def whats_new_page(request: Request, db: AsyncSession = Depends(get_db)):
     await portal_user(request, db)
-    build=os.environ.get("BUILD_COMMIT", "development")
-    return HTMLResponse(WHATS_NEW_HTML.replace("__BUILD_COMMIT__", escape(build, quote=True)), headers={"Cache-Control":"no-store"})
+    return HTMLResponse(WHATS_NEW_HTML.replace("__BUILD_COMMIT__", whats_new_build_commit()), headers={"Cache-Control":"no-store"})
