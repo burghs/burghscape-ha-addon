@@ -1,4 +1,5 @@
 """Client Portal — public-facing portal served at client.mybeacon.co.za"""
+import os
 from datetime import datetime
 from html import escape
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +14,9 @@ from routers.backups import build_backup_file_response, is_customer_backup_avail
 from support_hours import calculate_support_hours, format_hours, support_ticket_notice
 
 router = APIRouter()
+
+def portal_build_commit():
+    return escape(os.environ.get("BUILD_COMMIT", "development"), quote=True)
 
 ADDON_REPOSITORY_URL = "https://github.com/burghs/burghscape-ha-addon"
 
@@ -1526,7 +1530,7 @@ async def client_portal(request: Request):
         native_backup_html = "".join(native_items)
 
         return HTMLResponse(PORTAL_HTML.format(
-            build_commit=escape(os.environ.get("BUILD_COMMIT", "development"), quote=True),
+            build_commit=portal_build_commit(),
             onboarding_banner_html=onboarding_banner_html,
             setup_nav_label=setup_nav_label,
             setup_nav_class=setup_nav_class,

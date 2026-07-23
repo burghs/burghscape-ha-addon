@@ -1,9 +1,11 @@
 import sys
 import unittest
+from unittest.mock import patch
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
+from routers import portal
 from routers.portal import PORTAL_HTML
 
 
@@ -13,6 +15,10 @@ class ClientPortalRC11Tests(unittest.TestCase):
         for key in ("cpu_percent", "memory_percent", "disk_percent", "hours_percent", "entity_count", "addon_count_display", "integration_count", "open_ticket_count"):
             values[key] = 0
         return PORTAL_HTML.format_map(values)
+
+    def test_authenticated_portal_build_marker_dependency_is_available(self):
+        with patch.dict(portal.os.environ, {"BUILD_COMMIT": "test<commit>"}):
+            self.assertEqual(portal.portal_build_commit(), "test&lt;commit&gt;")
 
     def test_dashboard_has_required_consolidated_structure(self):
         html = self.render()
