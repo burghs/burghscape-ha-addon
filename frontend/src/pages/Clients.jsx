@@ -40,6 +40,10 @@ export default function Clients() {
   const [showToken, setShowToken] = useState(false);
   const [tokenMsg, setTokenMsg] = useState('');
   const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [twoFactorResetUser, setTwoFactorResetUser] = useState(null);
+  const [twoFactorResetReason, setTwoFactorResetReason] = useState('');
+  const [twoFactorResetConfirmed, setTwoFactorResetConfirmed] = useState(false);
+  const [twoFactorResetLoading, setTwoFactorResetLoading] = useState(false);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -158,21 +162,33 @@ export default function Clients() {
     }
   };
 
-  const resetPortalUserTwoFactor = async (user) => {
+  const openPortalUserTwoFactorReset = (user) => {
     if (!user.two_factor_enabled) return;
-    const reason = prompt('Reason for resetting two-factor authentication for ' + user.name + ':');
-    if (!reason || reason.trim().length < 5) { if (reason !== null) alert('A reason of at least 5 characters is required.'); return; }
-    if (!confirm('Reset two-factor authentication for ' + user.name + '? Recovery codes and pending challenges will be invalidated.')) return;
+    setTwoFactorResetUser(user);
+    setTwoFactorResetReason('');
+    setTwoFactorResetConfirmed(false);
+  };
+
+  const resetPortalUserTwoFactor = async () => {
+    const user = twoFactorResetUser;
+    const reason = twoFactorResetReason.trim();
+    if (!user || !user.two_factor_enabled || !twoFactorResetConfirmed || reason.length < 5) return;
+    setTwoFactorResetLoading(true);
     try {
       const res = await fetch('/api/portal/admin/portal-users/' + user.id + '/two-factor/reset', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: true, reason: reason.trim() }),
+        body: JSON.stringify({ confirm: true, reason }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Reset failed');
+      setPortalUsers(current => current.map(item => item.id === user.id ? { ...item, two_factor_enabled: false, two_factor_enabled_at: null } : item));
       setPortalUserMsg({ type: 'success', text: 'Two-factor authentication reset and audited for ' + user.name + '.' });
+      setTwoFactorResetUser(null);
+      setTwoFactorResetReason('');
+      setTwoFactorResetConfirmed(false);
       fetchPortalUsers();
     } catch (err) { setPortalUserMsg({ type: 'error', text: err.message }); }
+    finally { setTwoFactorResetLoading(false); }
   };
 
   const deletePortalUser = async (userId) => {
@@ -599,14 +615,14 @@ export default function Clients() {
         )}
 
         <div className="space-y-3 md:hidden">
-          {portalUsers.map(user => <div key={user.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-white">{user.name}</p><p className="break-all text-sm text-gray-400">{user.email}</p><p className="mt-1 text-sm text-gray-500">{user.client_name || 'No client'}</p><p className="mt-1 text-xs text-gray-400">2FA: {user.two_factor_enabled ? 'Enabled' : 'Disabled'}</p></div><StatusBadge status={user.is_active ? 'active' : 'disabled'}>{user.is_active ? 'Active' : 'Disabled'}</StatusBadge></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="btn btn-secondary" onClick={() => updatePortalUser(user.id, { is_active: !user.is_active })}>{user.is_active ? 'Disable' : 'Enable'}</button>{user.two_factor_enabled && <button className="btn btn-danger" onClick={() => resetPortalUserTwoFactor(user)}>Reset 2FA…</button>}<button className="btn btn-danger" onClick={() => deletePortalUser(user.id)}>Delete user…</button></div></div>)}
+          {portalUsers.map(user => <div key={user.id} className="app-card app-card-compact"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-white">{user.name}</p><p className="break-all text-sm text-gray-400">{user.email}</p><p className="mt-1 text-sm text-gray-500">{user.client_name || 'No client'}</p><div className="mt-3 rounded-lg border border-white/10 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Two-Factor Authentication</p><p className="mt-1 text-sm text-white">Status: {user.two_factor_enabled ? 'Enabled' : 'Disabled'}</p>{user.two_factor_enabled && <button className="btn btn-danger mt-3 w-full" onClick={() => openPortalUserTwoFactorReset(user)}>Reset two-factor authentication</button>}</div></div><StatusBadge status={user.is_active ? 'active' : 'disabled'}>{user.is_active ? 'Active' : 'Disabled'}</StatusBadge></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="btn btn-secondary" onClick={() => updatePortalUser(user.id, { is_active: !user.is_active })}>{user.is_active ? 'Disable' : 'Enable'}</button><button className="btn btn-danger" onClick={() => deletePortalUser(user.id)}>Delete user…</button></div></div>)}
         </div>
         <DataTable className="hidden md:block"
-          columns={[{ label: 'Name' }, { label: 'Email' }, { label: 'Client' }, { label: 'Role' }, { label: 'Status' }, { label: 'Last Login' }, { label: 'Actions', align: 'right' }]}
-          colSpan={7}
+          columns={[{ label: 'Name' }, { label: 'Email' }, { label: 'Client' }, { label: 'Role' }, { label: 'Status' }, { label: 'Two-Factor Authentication' }, { label: 'Last Login' }, { label: 'Actions', align: 'right' }]}
+          colSpan={8}
         >
           {portalUsers.length === 0 ? (
-            <tr><td colSpan="7" className="table-empty">No portal users yet. Click "+ Add User" to create one.</td></tr>
+            <tr><td colSpan="8" className="table-empty">No portal users yet. Click "+ Add User" to create one.</td></tr>
           ) : (
             portalUsers.map(u => (
               <tr key={u.id} className="transition hover:bg-white/[0.03]">
@@ -615,7 +631,7 @@ export default function Clients() {
                 <td className="px-4 py-3 text-muted-text">{u.client_name || '—'}</td>
                 <td className="px-4 py-3"><StatusBadge status={u.role} light>{u.role}</StatusBadge></td>
                 <td className="px-4 py-3"><StatusBadge status={u.is_active ? 'active' : 'disabled'} light>{u.is_active ? 'Active' : 'Disabled'}</StatusBadge></td>
-                <td className="px-4 py-3 text-xs text-muted-text">{u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}</td>
+                <td className="px-4 py-3"><div className="text-sm text-white">Status: {u.two_factor_enabled ? 'Enabled' : 'Disabled'}</div>{u.two_factor_enabled && <button type="button" onClick={() => openPortalUserTwoFactorReset(u)} className="mt-2 text-xs text-amber-300 hover:text-amber-200">Reset two-factor authentication</button>}</td><td className="px-4 py-3 text-xs text-muted-text">{u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex flex-wrap justify-end gap-2">
                     <ActionLink onClick={() => updatePortalUser(u.id, { is_active: !u.is_active })} variant={u.is_active ? 'warning' : 'success'} className="text-xs">
@@ -632,7 +648,7 @@ export default function Clients() {
                     >
                       Reset PW
                     </ActionLink>
-                    {u.two_factor_enabled && <ActionLink onClick={() => resetPortalUserTwoFactor(u)} variant="warning" className="text-xs">Reset 2FA</ActionLink>}
+
                     <ActionLink onClick={() => deletePortalUser(u.id)} variant="danger" className="text-xs">Delete</ActionLink>
                   </div>
                 </td>
@@ -643,6 +659,19 @@ export default function Clients() {
         {securityAudit.length > 0 && <div className="section-card-light mt-5"><h3 className="font-semibold text-white">Two-factor reset audit</h3><div className="mt-3 space-y-2">{securityAudit.slice(0, 10).map(event => <div key={event.id} className="rounded-lg border border-white/10 p-3 text-sm"><p className="text-white">Portal user #{event.client_user_id} reset by {event.administrator}</p><p className="mt-1 text-gray-400">{event.reason} · {event.created_at ? new Date(event.created_at).toLocaleString() : 'Unknown time'}</p></div>)}</div></div>}
       </div>
 
+
+      {twoFactorResetUser && (
+        <Modal className="p-6" maxWidth="max-w-lg">
+          <h2 className="text-xl font-semibold text-white">Reset two-factor authentication</h2>
+          <p className="mt-2 text-sm text-gray-300">{twoFactorResetUser.name} · {twoFactorResetUser.email}</p>
+          <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            The current authenticator will stop working, all recovery codes will be invalidated, and the client will return to password-only login. They can enroll again later.
+          </div>
+          <label className="mt-4 block"><span className="form-label">Reason</span><textarea className="form-input min-h-24" value={twoFactorResetReason} onChange={e => setTwoFactorResetReason(e.target.value)} placeholder="Reason for the reset (minimum 5 characters)" /></label>
+          <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-gray-200"><input className="mt-1" type="checkbox" checked={twoFactorResetConfirmed} onChange={e => setTwoFactorResetConfirmed(e.target.checked)} /><span>I confirm that the authenticator and all recovery codes must be invalidated.</span></label>
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button className="btn btn-secondary" disabled={twoFactorResetLoading} onClick={() => setTwoFactorResetUser(null)}>Cancel</button><button className="btn btn-danger" disabled={twoFactorResetLoading || !twoFactorResetConfirmed || twoFactorResetReason.trim().length < 5} onClick={resetPortalUserTwoFactor}>{twoFactorResetLoading ? 'Resetting…' : 'Reset two-factor authentication'}</button></div>
+        </Modal>
+      )}
 
       {tokenClient && (
         <Modal className="max-h-[85vh] overflow-y-auto p-6" maxWidth="max-w-lg">

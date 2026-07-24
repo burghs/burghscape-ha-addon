@@ -201,14 +201,33 @@ class TwoFactorAuthenticationTests(unittest.TestCase):
             # Re-enable, then prove administrator reset invalidates state and records reason.
             started2 = await two_factor.start_enrollment(two_factor.PasswordRequest(current_password="Password123!"), request("portal_token", "existing"), db)
             await two_factor.confirm_enrollment(two_factor.EnrollmentVerify(code=pyotp.TOTP(started2["manual_key"]).now()), request("portal_token", "existing"), db)
+            login_before_reset = Response()
+            await portal_users.portal_login(portal_users.PortalLogin(email=user.email, password="Password123!"), login_before_reset, db)
+            self.assertTrue((await db.execute(select(TwoFactorRecoveryCode))).scalars().all())
+            self.assertTrue((await db.execute(select(TwoFactorChallenge).where(TwoFactorChallenge.used_at.is_(None)))).scalars().all())
             reset = await two_factor.admin_reset(user.id, two_factor.AdminResetRequest(confirm=True, reason="Lost client device"), request(), {"username": "admin", "role": "superadmin"}, db)
             self.assertTrue(reset["audit_recorded"])
             self.assertFalse(user.two_factor_enabled)
+            self.assertFalse((await db.execute(select(TwoFactorRecoveryCode))).scalars().all())
+            self.assertFalse((await db.execute(select(TwoFactorChallenge).where(TwoFactorChallenge.used_at.is_(None)))).scalars().all())
             audit = (await db.execute(select(SecurityAuditEvent).where(SecurityAuditEvent.action == "two_factor_admin_reset"))).scalars().one()
             self.assertEqual(audit.reason, "Lost client device")
             response = Response()
             result = await portal_users.portal_login(portal_users.PortalLogin(email=user.email, password="Password123!"), response, db)
             self.assertIn("token", result)
+        self.run_flow(flow)
+
+    def test_status_schema_for_disabled_and_enabled_user(self):
+        async def flow(db, user):
+            portal_sessions["existing"] = user.id
+            disabled = await two_factor.status(request("portal_token", "existing"), db)
+            self.assertEqual(disabled, {"enabled": False, "enabled_at": None, "recovery_codes_remaining": 0})
+            started = await two_factor.start_enrollment(two_factor.PasswordRequest(current_password="Password123!"), request("portal_token", "existing"), db)
+            await two_factor.confirm_enrollment(two_factor.EnrollmentVerify(code=pyotp.TOTP(started["manual_key"]).now()), request("portal_token", "existing"), db)
+            enabled = await two_factor.status(request("portal_token", "existing"), db)
+            self.assertTrue(enabled["enabled"])
+            self.assertIsInstance(enabled["enabled_at"], str)
+            self.assertEqual(enabled["recovery_codes_remaining"], 10)
         self.run_flow(flow)
 
     def test_admin_reset_requires_auth_confirmation_and_reason(self):
@@ -232,9 +251,11 @@ class TwoFactorAuthenticationTests(unittest.TestCase):
         self.assertIn("Security", account_panel)
         login_page = portal_source[portal_source.index('LOGIN_HTML ='):]
         self.assertNotIn("Enable two-factor authentication", login_page)
-        for value in ("autocomplete=\"one-time-code\"", "Use a recovery code", "locally generated QR code", "I have saved these recovery codes"):
+        for value in ("autocomplete=\"one-time-code\"", "Use a recovery code", "locally generated QR code", "I have saved these recovery codes", "Unable to load two-factor status", "retry-status", "AbortController", "8000", "Manage two-factor authentication"):
             self.assertIn(value, router_source)
-        for value in ("Reset 2FA", "reason.trim().length < 5", "Two-factor reset audit"):
+        self.assertIn("join('\\\\n')", router_source)
+        self.assertNotIn("join('\n')", two_factor.SECURITY_PAGE)
+        for value in ("Reset two-factor authentication", "reason.length < 5", "twoFactorResetConfirmed", "all recovery codes will be invalidated", "password-only login", "Two-factor reset audit", "Status: {u.two_factor_enabled ? 'Enabled' : 'Disabled'}"):
             self.assertIn(value, admin_source)
         self.assertNotIn("logger.", router_source)
         self.assertNotIn("external QR", router_source)

@@ -20,7 +20,7 @@ Ten recovery codes are generated after successful verification and displayed onc
 
 After the password, enter the current six-digit authenticator code. Select “Use a recovery code” when the authenticator is unavailable. A recovery code can succeed once. Support must never request an authenticator secret or recovery code.
 
-If all factors are lost, an authorized administrator may use Reset Two-Factor Authentication in Management Portal → Clients → Portal Users. A reason and explicit confirmation are required. The reset removes the encrypted secret, recovery hashes, pending enrollment, and active challenges, and records administrator, affected user/client, time, reason, IP address, and user agent. It creates no bypass code. The client returns to password-only login until voluntarily re-enrolling.
+If all factors are lost, an authorized administrator may use Reset two-factor authentication in Management Portal → Clients → Portal Users. Every user row/card shows the current TOTP status; the reset action appears only while enabled. A reason and explicit confirmation are required. The reset removes the encrypted secret, recovery hashes, pending enrollment, and active challenges, and records administrator, affected user/client, time, reason, IP address, and user agent. It creates no bypass code. The client returns to password-only login until voluntarily re-enrolling.
 
 ## Client disable
 
@@ -52,7 +52,7 @@ Portal sessions and password-reset tokens remain process-memory state in the cur
 
 ## Client Account interface
 
-The dashboard Account flyout contains a Security section below Theme and Change Password. It loads the authenticated status endpoint whenever Account opens. Disabled users see **Enable two-factor authentication**; enabled users see the enabled date, remaining recovery-code count, and **Manage two-factor authentication**. Enrollment, regeneration, and secure disable run on `/portal/security`; the public login page never offers enrollment. QR/manual setup values and newly generated recovery codes exist only in the active enrollment/regen response and are never persisted in browser storage.
+The dashboard Account flyout contains a Security section below Theme and Change Password. The dedicated page uses a validated, eight-second status request and always renders Disabled, Enabled, or an error with Retry; it must never remain indefinitely in Loading. It loads the authenticated status endpoint whenever Account opens. Disabled users see **Enable two-factor authentication**; enabled users see the enabled date, remaining recovery-code count, and **Manage two-factor authentication**. Enrollment, regeneration, and secure disable run on `/portal/security`; the public login page never offers enrollment. QR/manual setup values and newly generated recovery codes exist only in the active enrollment/regen response and are never persisted in browser storage.
 
 ## Acceptance status
 
