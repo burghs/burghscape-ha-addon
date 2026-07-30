@@ -37,7 +37,10 @@ class RC12SupportTests(unittest.TestCase):
         self.assertNotIn("method: 'DELETE',\n        credentials: 'include' });\n      if (res.ok) {\n        fetchClients", clients)
         self.assertIn("Home Assistant Backups", backups)
         self.assertIn("Platform Server Backups", backups)
-        self.assertNotIn("Delete</Button>", backups)
+        self.assertIn("Delete managed backup?", backups)
+        self.assertIn("Permanently delete", backups)
+        platform_section = backups.split('id="server-backups"', 1)[1].split("{deleteTarget &&", 1)[0]
+        self.assertNotIn('variant="danger"', platform_section)
         self.assertIn("escape(t.resolution)", portal)
 
 
