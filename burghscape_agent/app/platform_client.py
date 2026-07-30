@@ -75,6 +75,35 @@ class PlatformClient:
             logger.error("Failed to get backup config: HTTP %s %s", resp.status, body[:200])
             return {"error": f"HTTP {resp.status}"}
 
+    async def report_ha_user_capability(self, available: bool) -> dict:
+        """Advertise the isolated read-only Home Assistant user capability."""
+        async with self.session.post(
+            "/api/ha-users/agent/capabilities",
+            json={"ha_users_read": available},
+        ) as resp:
+            if resp.status in (200, 201):
+                return await resp.json()
+            return {"error": f"HTTP {resp.status}"}
+
+    async def get_ha_user_inventory_request(self) -> dict:
+        """Claim at most one client-bound read-only inventory request."""
+        async with self.session.get("/api/ha-users/agent/requests/next") as resp:
+            if resp.status == 204:
+                return {}
+            if resp.status == 200:
+                return await resp.json()
+            return {"error": f"HTTP {resp.status}"}
+
+    async def report_ha_user_inventory_result(self, request_id: str, payload: dict) -> dict:
+        """Return a sanitized result for one claimed inventory request."""
+        async with self.session.post(
+            f"/api/ha-users/agent/requests/{request_id}/result",
+            json=payload,
+        ) as resp:
+            if resp.status in (200, 201):
+                return await resp.json()
+            return {"error": f"HTTP {resp.status}"}
+
     async def upload_backup_file(
         self,
         path: str,

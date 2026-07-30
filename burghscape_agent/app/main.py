@@ -15,6 +15,7 @@ import uuid
 
 from app.config import Config
 from app.ha_client import HAClient
+from app.ha_user_inventory import HAUserInventoryClient, HAUserInventoryError
 from app.platform_client import PlatformClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -732,6 +733,34 @@ async def run_manual_backup_once_background(operation_id: str, path: str = MANUA
         logger.error("Manual backup workflow failed operation_id=%s error_category=%s", operation_id, safe_error_category(e))
 
 
+async def ha_user_inventory_loop(poll_interval_seconds: int = 10):
+    """Run read-only user inventory independently from heartbeat/reporting."""
+    capability_reported = False
+    while True:
+        try:
+            async with PlatformClient(config) as platform:
+                if not capability_reported:
+                    result = await platform.report_ha_user_capability(bool(config.ha_token))
+                    capability_reported = "error" not in result
+                request = await platform.get_ha_user_inventory_request()
+                request_id = request.get("request_id") if isinstance(request, dict) else None
+                if request_id:
+                    try:
+                        inventory = await HAUserInventoryClient(config.ha_url, config.ha_token).fetch()
+                        payload = {"status": "completed", "users": inventory.users}
+                    except HAUserInventoryError as exc:
+                        payload = {"status": "failed", "error_code": exc.code}
+                    await platform.report_ha_user_inventory_result(request_id, payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "HA user inventory worker unavailable error_category=%s",
+                type(exc).__name__,
+            )
+        await asyncio.sleep(poll_interval_seconds)
+
+
 
 async def main_loop():
     logger.info("Burghscape Agent starting")
@@ -751,6 +780,8 @@ async def main_loop():
     should_run_manual_backup, manual_backup_operation_id = prepare_manual_backup_once(config.manual_backup_once)
     if should_run_manual_backup and manual_backup_operation_id:
         asyncio.create_task(run_manual_backup_once_background(manual_backup_operation_id))
+
+    asyncio.create_task(ha_user_inventory_loop())
 
     while True:
         try:

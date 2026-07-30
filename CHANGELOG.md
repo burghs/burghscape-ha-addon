@@ -1,3 +1,10 @@
+# 0.2.57
+
+- Add read-only Home Assistant user inventory through authenticated local WebSocket `config/auth/list`.
+- Advertise `ha_users_read` separately and process short-lived Platform requests in a worker isolated from heartbeat/reporting.
+- Return only strictly validated identity, role, state, system, and credential-provider fields with sanitized errors.
+- Preserve Agent 0.2.56 heartbeat, onboarding, tunnel, telemetry, backup, and unsupported-backup-poll behavior without adding add-on permissions.
+
 # 0.2.56
 
 - Stop polling the unsupported `GET /api/backups/command` route; the Platform has no command-queue contract and administrator-triggered polling remains deferred.
