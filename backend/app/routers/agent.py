@@ -1,7 +1,7 @@
-import os
 """HA Agent endpoints — token-gated."""
+import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel
 from typing import Optional, List
@@ -43,6 +43,9 @@ class AgentReport(BaseModel):
     backup: Optional[dict] = None
     backup_status: Optional[dict] = None
     tailscale: Optional[dict] = None
+    tunnel_running: Optional[bool] = None
+    onboarding_status: Optional[str] = None
+    onboarding_error: Optional[str] = None
 
 
 class AgentStatus(BaseModel):
@@ -107,6 +110,18 @@ async def agent_report(
     
     # Validate token
     client, token_obj = await validate_token(token, db)
+
+    # Serialize instance discovery/creation for this client. There is currently
+    # no database uniqueness constraint on ha_instances.client_id, so locking
+    # the authenticated parent row prevents concurrent first heartbeats from
+    # creating duplicate instances without changing the existing schema.
+    client = (
+        await db.execute(
+            select(Client)
+            .where(Client.id == client.id)
+            .with_for_update()
+        )
+    ).scalars().one()
     
     # Find or create instance
     result = await db.execute(
@@ -155,6 +170,7 @@ async def agent_report(
                 except (ValueError, AttributeError):
                     pass
         db.add(instance)
+        was_offline = False
     else:
         # Check if system was previously offline (coming back online)
         was_offline = not instance.is_online
@@ -229,11 +245,11 @@ async def agent_report(
     # Store backup status from agent heartbeat
     if report.backup_status:
         bs = report.backup_status
-        if bs.get("last_backup"):
-            from datetime import datetime as _dt
+        last_backup_timestamp = bs.get("last_backup")
+        if last_backup_timestamp is not None:
             try:
-                instance.last_backup = _dt.fromtimestamp(bs["last_backup"])
-            except (ValueError, TypeError):
+                instance.last_backup = datetime.fromtimestamp(last_backup_timestamp)
+            except (ValueError, TypeError, OverflowError, OSError):
                 pass
         if bs.get("enabled"):
             interval = bs.get("interval_hours", 24)
@@ -269,6 +285,9 @@ async def agent_report(
         "backup": report.backup,
         "backup_status": report.backup_status,
         "tailscale": report.tailscale,
+        "tunnel_running": report.tunnel_running,
+        "onboarding_status": report.onboarding_status,
+        "onboarding_error": report.onboarding_error,
         "client_id": client.id,
         "client_name": client.name,
     }

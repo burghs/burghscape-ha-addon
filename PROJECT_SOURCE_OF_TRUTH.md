@@ -142,3 +142,9 @@ Support CTAs use the existing client support-ticket form with campaign/revision 
 ## Optional client TOTP authentication
 
 Client two-factor authentication Phase 1 is an optional RFC 6238 authenticator-app layer on the existing client password flow. Password verification remains unchanged. Enabled users receive a database-backed, five-minute pre-authentication challenge instead of a portal session; successful TOTP or single-use recovery verification creates a fresh portal session. Secrets use Fernet authenticated encryption with the persistent deployment-managed `TOTP_ENCRYPTION_KEY`; recovery codes are stored only as salted PBKDF2 hashes. Client self-disable requires password plus a factor. Administrator reset requires confirmation and reason and writes `security_audit_events`. See `TWO_FACTOR_AUTHENTICATION.md`. Email OTP, SMS, trusted devices, passkeys, forced enrollment, and admin-login TOTP are not implemented.
+
+## Agent reporting and first-heartbeat contract (2026-07-30)
+
+A valid subscription token scopes `POST /api/agent/report` to its active client. A missing `HomeAssistantInstance` is the supported first-onboarding state: the Platform serializes creation on the authenticated client row, creates one online instance, and later heartbeats update it without client-specific intervention. Optional malformed backup timestamps do not reject otherwise valid telemetry. See `AGENT_REPORTING_CONTRACT.md`.
+
+The Platform has no managed-backup command-queue contract. Agent 0.2.56 disables the unsupported `/api/backups/command` poll; command polling remains deferred while existing backup telemetry, configuration, state, manual one-shot, upload, and download paths remain supported.

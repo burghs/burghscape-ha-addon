@@ -66,3 +66,10 @@
 - IN PROGRESS — authenticated Account Security and administrator reset UI corrected; awaiting live Jackie browser acceptance
 - IN PROGRESS — controlled live client/API validation
 - BLOCKED — COMPLETE status until real authenticator enrollment/login and recovery-code acceptance are signed off
+
+## Agent first-heartbeat correction
+
+- COMPLETE — generic first heartbeat creates one online instance and repeated heartbeats update it, protected by generated-client regression coverage
+- COMPLETE — optional backup timestamps accept valid Unix values and tolerate absent or malformed optional values
+- COMPLETE — unsupported managed-backup command polling removed from Agent 0.2.56; full command-queue architecture remains deferred
+- IN PROGRESS — production Younus recovery, disposable-client first-heartbeat acceptance, and existing-client regression sign-off
