@@ -29,6 +29,7 @@ docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape <
 docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260722_clear_pre_overlay_popup_impressions.sql"
 docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260722_campaign_notification_lifecycle.sql"
 docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260723_add_client_totp.sql"
+docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape < "$repo_root/backend/migrations/20260730_add_ha_user_inventory.sql"
 git archive HEAD:backend | docker build --build-arg "APP_VERSION=$platform_version" --build-arg "VCS_REF=$platform_commit" -t "burghscape-backend:$platform_commit" -
 git archive HEAD:frontend | docker build --build-arg "APP_VERSION=$platform_version" --build-arg "VCS_REF=$platform_commit" -t "burghscape-frontend:$platform_commit" -
 docker compose -f "$compose_base" -f "$compose_release" up -d --no-build --force-recreate backend frontend
@@ -57,5 +58,5 @@ assert health["version"]==version and health["commit"]==commit, health
 assert frontend["version"]==version and frontend["commit"]==commit, frontend
 print(json.dumps({"backend":health,"frontend":frontend},indent=2))
 PY
-docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape -c "SELECT to_regclass('public.client_onboarding_states') AS onboarding_table, to_regclass('public.two_factor_challenges') AS two_factor_table;"
+docker exec -i mybeacon-db psql -v ON_ERROR_STOP=1 -U burghscape -d burghscape -c "SELECT to_regclass('public.client_onboarding_states') AS onboarding_table, to_regclass('public.two_factor_challenges') AS two_factor_table, to_regclass('public.ha_user_inventories') AS ha_user_inventory_table;"
 echo "Pre-deployment database backup: $backup_file"

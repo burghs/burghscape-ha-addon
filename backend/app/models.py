@@ -159,6 +159,33 @@ class HomeAssistantInstance(Base):
     last_seen = Column(DateTime)
     client = relationship("Client", back_populates="instances")
     alerts = relationship("Alert", back_populates="instance", cascade="all, delete-orphan")
+
+
+class HAUserInventory(Base):
+    __tablename__ = "ha_user_inventories"
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    ha_users_read = Column(Boolean, nullable=False, default=False)
+    capability_reported_at = Column(DateTime)
+    users = Column(JSON, nullable=False, default=list)
+    last_error_code = Column(String(50))
+    refreshed_at = Column(DateTime)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class HAUserInventoryRequest(Base):
+    __tablename__ = "ha_user_inventory_requests"
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    request_id = Column(String(64), nullable=False, unique=True, index=True)
+    state = Column(String(20), nullable=False, default="pending", index=True)
+    error_code = Column(String(50))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    claimed_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    expires_at = Column(DateTime, nullable=False)
+
+
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     id = Column(Integer, primary_key=True, index=True)

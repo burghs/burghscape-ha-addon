@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet } from "react-router-dom";
-import { Home, Users, Cpu, Database, LifeBuoy, Megaphone, Settings, Menu, X, LogOut } from "lucide-react";
+import { Home, Users, UserRoundSearch, Cpu, Database, LifeBuoy, Megaphone, Settings, Menu, X, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/AuthContext";
 import { BrandLogo } from "./ui";
@@ -8,6 +8,7 @@ const navItems = [
   { path: "/dashboard", icon: Home, label: "Dashboard" },
   { path: "/clients", icon: Users, label: "Clients" },
   { path: "/instances", icon: Cpu, label: "HA Instances" },
+  { path: "/ha-users", icon: UserRoundSearch, label: "HA Users" },
   { path: "/backups", icon: Database, label: "Backups" },
   { path: "/support", icon: LifeBuoy, label: "Support" },
   { path: "/campaigns", icon: Megaphone, label: "Campaigns" },

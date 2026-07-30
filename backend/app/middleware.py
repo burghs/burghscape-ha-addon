@@ -39,6 +39,7 @@ PUBLIC_PATHS = {
 # Prefixes that are public
 PUBLIC_PREFIXES = (
     "/api/backups/",
+    "/api/ha-users/agent/",
     "/api/portal/",
     "/api/instances/",
     "/static/",

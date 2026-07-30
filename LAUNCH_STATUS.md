@@ -73,3 +73,12 @@
 - COMPLETE — optional backup timestamps accept valid Unix values and tolerate absent or malformed optional values
 - COMPLETE — unsupported managed-backup command polling removed from Agent 0.2.56; full command-queue architecture remains deferred
 - IN PROGRESS — production Younus recovery, disposable-client first-heartbeat acceptance, and existing-client regression sign-off
+
+## Read-only Home Assistant user inventory
+
+- IMPLEMENTED / DEPLOYMENT PENDING — isolated Management Portal inventory, client-bound request queue, last-good cache, refresh timestamp, and sanitized failure states
+- COMPLETE — Agent 0.2.57 source uses existing HA-token WebSocket authentication and `config/auth/list` without new add-on permissions
+- COMPLETE — older Agents remain compatible and continue heartbeat/reporting with the Users interface marked Not supported
+- COMPLETE — no password, user mutation, session, MFA, or last-login controls are present
+- COMPLETE — focused Agent, Platform, and frontend tests pass; broad backend suite has one unrelated pre-existing failure in the already-dirty managed-backup UI assertion
+- BLOCKED — Platform deployment and live compatible-installation verification pending clean release acceptance and Agent 0.2.57 installation on a validation system

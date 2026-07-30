@@ -15,7 +15,7 @@ from sqlalchemy import select, func, update
 
 from config import get_settings
 from database import init_db, engine, async_session
-from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications, two_factor
+from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications, two_factor, ha_users
 from middleware import AdminAuthMiddleware
 from admin_auth import admin_auth_router
 from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken
@@ -261,6 +261,7 @@ app.include_router(campaign_popups.router, tags=["Campaign Popups"])
 app.include_router(campaign_notifications.router, tags=["Campaign Notifications"])
 app.include_router(onboarding.router, tags=["Client Onboarding"])
 app.include_router(two_factor.router, tags=["Client Two-Factor Authentication"])
+app.include_router(ha_users.router, prefix="/api/ha-users", tags=["Home Assistant User Inventory"])
 
 
 # Static files for brand assets
