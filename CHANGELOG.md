@@ -1,3 +1,9 @@
+# 0.2.56
+
+- Stop polling the unsupported `GET /api/backups/command` route; the Platform has no command-queue contract and administrator-triggered polling remains deferred.
+- Preserve heartbeat reporting, backup telemetry, backup configuration, manual one-shot backup, state reporting, and upload behavior.
+- This release installs through the normal Home Assistant add-on update flow and does not require token replacement or reinstall.
+
 # 0.2.55
 
 - Prefer the authenticated supported Supervisor `/backups` inventory for native Home Assistant backup telemetry while preserving Core and filesystem fallbacks.
