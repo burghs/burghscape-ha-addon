@@ -23,7 +23,7 @@ def session_hash(request):
 def popup_payload(c):
     action_url=client_action_url(c)
     has=bool(c.call_to_action_label and action_url)
-    return {"id":c.id,"revision":c.delivery_revision,"title":c.title,"summary":c.popup_summary or c.subtitle or c.body_content[:240],"campaign_type":c.campaign_type,"campaign_type_label":c.campaign_type.replace("_"," ").title(),"price_text":c.price_text,"regular_price_text":c.regular_price_text,"popup_behavior":c.popup_behavior,"image_url":f"/api/portal/campaigns/{c.id}/image" if c.image_reference else None,"details_url":f"/portal/whats-new?campaign_id={c.id}","call_to_action_label":c.call_to_action_label if has else None,"call_to_action_url":action_url if has else None}
+    return {"id":c.id,"revision":c.delivery_revision,"title":c.title,"summary":c.popup_summary or c.subtitle or c.body_content[:240],"campaign_type":c.campaign_type,"campaign_type_label":c.campaign_type.replace("_"," ").title(),"price_text":c.price_text,"regular_price_text":c.regular_price_text,"popup_behavior":c.popup_behavior,"image_url":f"/api/portal/campaigns/{c.id}/image" if c.image_reference else None,"details_url":f"/portal/whats-new?campaign_id={c.id}","call_to_action_label":("I'm Interested" if c.call_to_action_type in {"support","interest"} else c.call_to_action_label) if has else None,"call_to_action_url":action_url if has else None}
 
 async def state_for(db,campaign,user_id,create=False):
     state=(await db.execute(select(CampaignPopupState).where(CampaignPopupState.campaign_id==campaign.id,CampaignPopupState.client_user_id==user_id,CampaignPopupState.delivery_revision==campaign.delivery_revision))).scalars().first()

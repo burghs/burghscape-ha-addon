@@ -15,10 +15,10 @@ from sqlalchemy import select, func, update
 
 from config import get_settings
 from database import init_db, engine, async_session
-from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications, two_factor, ha_users, client_guides
+from routers import clients, instances, backups, backup_state, support, monitoring, auth, agent, tunnels, portal, portal_users, branding, campaigns, campaign_popups, onboarding, campaign_notifications, two_factor, ha_users, client_guides, campaign_leads
 from middleware import AdminAuthMiddleware
 from admin_auth import admin_auth_router
-from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken
+from models import Client, HomeAssistantInstance, Alert, SupportTicket, Backup, SubscriptionToken, CampaignLead
 
 settings = get_settings()
 
@@ -263,6 +263,7 @@ app.include_router(onboarding.router, tags=["Client Onboarding"])
 app.include_router(two_factor.router, tags=["Client Two-Factor Authentication"])
 app.include_router(ha_users.router, prefix="/api/ha-users", tags=["Home Assistant User Inventory"])
 app.include_router(client_guides.router, tags=["Client Guides"])
+app.include_router(campaign_leads.router, tags=["Campaign Leads"])
 
 
 # Static files for brand assets
@@ -318,7 +319,12 @@ async def dashboard_summary():
         backups_failed = failed_result.scalar() or 0
         
         offline_instances = total_instances - online_instances
-        
+
+        lead_rows = dict((await session.execute(select(CampaignLead.status, func.count(CampaignLead.id)).group_by(CampaignLead.status))).all())
+        lead_won = lead_rows.get("won", 0)
+        lead_lost = lead_rows.get("lost", 0)
+        lead_decided = lead_won + lead_lost
+
         return {
             "total_clients": total_clients,
             "active_clients": active_clients,
@@ -328,4 +334,9 @@ async def dashboard_summary():
             "backups_failed": backups_failed,
             "alerts_unresolved": alerts_unresolved,
             "support_open": support_open,
+            "campaign_leads_new": lead_rows.get("new", 0),
+            "campaign_leads_open": sum(lead_rows.get(x, 0) for x in ("new", "contacted", "quoted", "scheduled")),
+            "campaign_leads_won": lead_won,
+            "campaign_leads_lost": lead_lost,
+            "campaign_leads_conversion_rate": round(lead_won / lead_decided * 100, 1) if lead_decided else 0,
         }

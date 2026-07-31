@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const page=fs.readFileSync(new URL("../src/pages/CampaignLeads.jsx",import.meta.url),"utf8");
+const layout=fs.readFileSync(new URL("../src/components/Layout.jsx",import.meta.url),"utf8");
+const app=fs.readFileSync(new URL("../src/App.jsx",import.meta.url),"utf8");
+for(const value of ["Campaign Leads","New Campaign Leads","Open Leads","Conversion Rate","Status history","Assigned to","Search leads","All statuses","All assignees","Save lead"]) assert.ok(page.includes(value),value);
+for(const status of ["new","contacted","quoted","scheduled","won","lost","cancelled"]) assert.ok(page.includes(status),status);
+assert.ok(layout.includes('path: "/campaign-leads"'));
+assert.ok(app.includes('path="campaign-leads"'));
+assert.ok(page.includes('/api/admin/campaign-leads'));
+console.log("campaign lead CRM UI contracts passed");

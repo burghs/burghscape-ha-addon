@@ -25,6 +25,11 @@ export default function Dashboard() {
     { label: 'Managed Backups Today', value: data.backups_today, tone: 'info' },
     { label: 'Unresolved Alerts', value: data.alerts_unresolved, tone: 'warning' },
     { label: 'Open Tickets', value: data.support_open, tone: 'danger' },
+    { label: 'New Campaign Leads', value: data.campaign_leads_new, tone: 'primary' },
+    { label: 'Open Leads', value: data.campaign_leads_open, tone: 'info' },
+    { label: 'Won', value: data.campaign_leads_won, tone: 'success' },
+    { label: 'Lost', value: data.campaign_leads_lost, tone: 'danger' },
+    { label: 'Conversion Rate', value: `${data.campaign_leads_conversion_rate}%`, tone: 'warning' },
   ];
 
   return (

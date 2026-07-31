@@ -10,6 +10,7 @@ import Backups from "./pages/Backups";
 import Support from "./pages/Support";
 import Settings from "./pages/Settings";
 import Campaigns from "./pages/Campaigns";
+import CampaignLeads from "./pages/CampaignLeads";
 import HAUsers from "./pages/HAUsers";
 import ClientGuides from "./pages/ClientGuides";
 
@@ -61,6 +62,7 @@ function AppRoutes() {
           <Route path="backups" element={<Backups />} />
           <Route path="support" element={<Support />} />
           <Route path="campaigns" element={<Campaigns />} />
+          <Route path="campaign-leads" element={<CampaignLeads />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

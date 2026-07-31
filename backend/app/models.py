@@ -324,6 +324,37 @@ class Campaign(Base):
     popup_events = relationship("CampaignPopupEvent", back_populates="campaign", cascade="all, delete-orphan")
     __table_args__ = (Index("ix_campaign_visibility", "status", "starts_at", "ends_at", "priority"),)
 
+
+class CampaignLead(Base):
+    __tablename__ = "campaign_leads"
+    id = Column(Integer, primary_key=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="RESTRICT"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False, index=True)
+    client_user_id = Column(Integer, ForeignKey("client_users.id", ondelete="SET NULL"), index=True)
+    comments = Column(Text)
+    preferred_contact_method = Column(String(30), nullable=False)
+    preferred_contact_time = Column(String(255), nullable=False)
+    status = Column(String(20), nullable=False, default="new", index=True)
+    assigned_to = Column(String(255), index=True)
+    internal_notes = Column(Text)
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    campaign = relationship("Campaign")
+    client = relationship("Client")
+    client_user = relationship("ClientUser")
+    history = relationship("CampaignLeadHistory", back_populates="lead", cascade="all, delete-orphan", order_by="CampaignLeadHistory.changed_at")
+
+class CampaignLeadHistory(Base):
+    __tablename__ = "campaign_lead_history"
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("campaign_leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_status = Column(String(20))
+    to_status = Column(String(20), nullable=False)
+    changed_by = Column(String(255), nullable=False)
+    note = Column(Text)
+    changed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    lead = relationship("CampaignLead", back_populates="history")
+
 class CampaignTarget(Base):
     __tablename__ = "campaign_targets"
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
