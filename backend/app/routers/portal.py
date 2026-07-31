@@ -495,7 +495,6 @@ LOGIN_HTML = """<!DOCTYPE html>
             if (res.ok) {
                 const data = await res.json();
                 if (data.requires_two_factor) { window.location = data.challenge_url || '/portal/two-factor'; return; }
-                document.cookie = 'portal_token=' + data.token + '; path=/';
                 if (data.user && data.user.force_password_change) { window.location = '/portal/change-password'; }
                 else { window.location = '/portal'; }
             } else {
@@ -1310,9 +1309,12 @@ async def portal_login_page():
 
 
 @router.get("/portal/logout")
-async def portal_logout():
+async def portal_logout(request: Request):
+    token = request.cookies.get("portal_token", "")
+    if token:
+        portal_sessions.pop(token, None)
     response = HTMLResponse(status_code=302, headers={"Location": "/portal/login"})
-    response.delete_cookie("portal_token")
+    response.delete_cookie("portal_token", path="/")
     return response
 
 

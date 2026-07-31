@@ -101,9 +101,13 @@ async def portal_login(login: PortalLogin, response: Response, db: AsyncSession 
     # Preserve the existing password-only session flow for users without TOTP.
     token = generate_session_token()
     portal_tokens[token] = user.id
+    response.set_cookie(
+        key="portal_token", value=token, httponly=True, secure=True,
+        samesite="lax", path="/",
+    )
     user.last_login = datetime.now()
     await db.flush()
-    
+
     return {
         "token": token,
         "user": {
