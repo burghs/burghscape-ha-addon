@@ -186,6 +186,30 @@ class HAUserInventoryRequest(Base):
     expires_at = Column(DateTime, nullable=False)
 
 
+class ClientGuide(Base):
+    __tablename__ = "client_guides"
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    description = Column(String(1000), nullable=False, default="")
+    category = Column(String(100), nullable=False)
+    stored_file_name = Column(String(255), nullable=False, unique=True)
+    original_file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    visibility_mode = Column(String(20), nullable=False, default="all")
+    published = Column(Boolean, nullable=False, default=False, index=True)
+    featured = Column(Boolean, nullable=False, default=False)
+    display_order = Column(Integer, nullable=False, default=0, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    assignments = relationship("ClientGuideAssignment", back_populates="guide", cascade="all, delete-orphan")
+
+class ClientGuideAssignment(Base):
+    __tablename__ = "client_guide_assignments"
+    guide_id = Column(Integer, ForeignKey("client_guides.id", ondelete="CASCADE"), primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True)
+    guide = relationship("ClientGuide", back_populates="assignments")
+
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     id = Column(Integer, primary_key=True, index=True)

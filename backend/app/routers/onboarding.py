@@ -10,7 +10,7 @@ from routers.campaigns import portal_user
 
 router=APIRouter()
 CURRENT_ONBOARDING_VERSION="rc1.4.3"
-MAX_STEP=7
+MAX_STEP=8
 TERMINAL={"completed","skipped"}
 
 class StepUpdate(BaseModel):

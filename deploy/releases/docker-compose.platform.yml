@@ -7,6 +7,7 @@ services:
     volumes: !override
       - /home/kenny/burghscape/config:/app/config:ro
       - /home/kenny/backups:/backups:rw
+      - /home/kenny/guides/client-guides:/guide-media:rw
   frontend:
     image: "burghscape-frontend:${PLATFORM_IMAGE_TAG:?set PLATFORM_IMAGE_TAG}"
     pull_policy: never

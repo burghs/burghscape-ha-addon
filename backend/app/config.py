@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     BACKUP_SFTP_PATH: str = ""
     CAMPAIGN_MEDIA_ROOT: str = "/backups/campaign-media"
     CAMPAIGN_MAX_IMAGE_BYTES: int = 5 * 1024 * 1024
+    GUIDE_MEDIA_ROOT: str = "/guide-media"
+    GUIDE_MAX_UPLOAD_BYTES: int = 20 * 1024 * 1024
     MONITOR_INTERVAL: int = 60
 
 

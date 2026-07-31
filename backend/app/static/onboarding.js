@@ -6,6 +6,7 @@ const steps=[
 {title:"Support and help",text:"Open support tickets, contact support, and download a diagnostic report.",target:"support"},
 {title:"Announcements",text:"What’s New contains service announcements and offers intended for your account.",target:"campaigns"},
 {title:"Account and appearance",text:"Use Account to change your password or choose System, Light, or Dark appearance.",target:"account"},
+{title:"Guides & Help",text:"Find step-by-step instructions for connecting the Home Assistant app, using your MyBeacon URL and resolving common setup issues.",target:"guides"},
 {title:"Getting Started",text:"Return to Getting Started for setup guidance, terminology, your checklist, or to replay this tour.",target:"getting-started"},
 {title:"You are ready",text:"Your portal is ready. Promotions resume under their normal eligibility rules after you finish or skip.",target:null}
 ];
