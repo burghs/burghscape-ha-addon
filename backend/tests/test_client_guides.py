@@ -75,7 +75,8 @@ class ClientGuidesTests(unittest.TestCase):
   guide,assignments=asyncio.run(remove());self.assertIsNotNone(guide);self.assertEqual(assignments,[])
  def test_frontend_and_spotlight_contract(self):
   management=(ROOT.parent/'frontend/src/pages/ClientGuides.jsx').read_text();portal=(ROOT/'app/routers/portal.py').read_text();viewer=(ROOT/'app/routers/client_guides.py').read_text();onboarding=(ROOT/'app/static/onboarding.js').read_text()
-  for value in ('Upload guide','Selected clients','Permanently delete','Published'):self.assertIn(value,management)
+  for value in ('Upload Guide','Selected Clients','This action cannot be undone','Uploading…','editorError'):self.assertIn(value,management)
+  nginx=(ROOT.parent/'frontend/nginx.conf').read_text();self.assertIn('location ^~ /api/admin/client-guides',nginx);self.assertIn('client_max_body_size 21m',nginx)
   self.assertIn('Guides &amp; Help',portal);self.assertIn('featured-guide-panel',portal);self.assertIn('guideSpotlightKey',portal);self.assertIn('localStorage',portal)
   self.assertIn('Guide PDF',viewer);self.assertIn('min-width:min(100%,900px)',viewer);self.assertNotIn('stored_file_name}</',viewer)
   self.assertIn('target:"guides"',onboarding);self.assertEqual(__import__('routers.onboarding',fromlist=['MAX_STEP']).MAX_STEP,8)
