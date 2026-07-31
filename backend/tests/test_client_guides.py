@@ -83,6 +83,7 @@ class ClientGuidesTests(unittest.TestCase):
   for value in ('Upload Guide','Selected Clients','This action cannot be undone','Uploading…','editorError'):self.assertIn(value,management)
   nginx=(ROOT.parent/'frontend/nginx.conf').read_text();self.assertIn('location ^~ /api/admin/client-guides',nginx);self.assertIn('client_max_body_size 21m',nginx)
   self.assertIn('Guides &amp; Help',portal);self.assertIn('featured-guide-panel',portal);self.assertIn('guideSpotlightKey',portal);self.assertIn('localStorage',portal)
-  self.assertIn('Guide PDF',viewer);self.assertIn('min-width:min(100%,900px)',viewer);self.assertNotIn('stored_file_name}</',viewer)
+  for value in ('Guide PDF','min-width:min(100%,900px)','role="button"','tabindex="0"','open-guide-action','activateCard(card)',"event.key==='Enter'","event.key==='Escape'") : self.assertIn(value,viewer)
+  self.assertNotIn('stored_file_name}</',viewer)
   self.assertIn('target:"guides"',onboarding);self.assertEqual(__import__('routers.onboarding',fromlist=['MAX_STEP']).MAX_STEP,8)
 if __name__=='__main__':unittest.main()
