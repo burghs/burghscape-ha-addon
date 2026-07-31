@@ -8,8 +8,11 @@
 | RC1.4.3 database migration | COMPLETE |
 | RC1.4.3 backend deployment | COMPLETE |
 | RC1.4.3 frontend deployment | COMPLETE |
+| Read-only HA Users Platform deployment | COMPLETE |
+| Client Guides, assignments, featured panel, and spotlight | COMPLETE |
+| Campaign Leads CRM, emails, and dashboard metrics | COMPLETE |
 | Authentication and client isolation | COMPLETE |
-| Campaign lifecycle and What’s New | COMPLETE |
+| Campaign lifecycle, What’s New, analytics, and dedicated Campaign Leads | COMPLETE |
 | Popup notification engine: corrected coordinator, CTA, resend, cache busting, SSE plus 15-second fallback | IN PROGRESS |
 | Onboarding start/resume/skip/complete/replay | COMPLETE |
 | Existing-user onboarding backfill | COMPLETE |
@@ -18,7 +21,7 @@
 | Subscription tokens and tier/support presentation | COMPLETE |
 | Automated billing and self-service subscription changes | BLOCKED |
 | Clean Home Assistant deployment validation | IN PROGRESS |
-| First real-client validation and sign-off | BLOCKED |
+| First real-client validation and sign-off | IN PROGRESS |
 | v1.0 release | BLOCKED |
 
 ## Campaign notification engagement upgrade
@@ -37,7 +40,7 @@
 
 - IN PROGRESS — actual desktop popup visibility after publish
 - IN PROGRESS — actual mobile/webview popup visibility and controls
-- IN PROGRESS — support CTA opens and prepopulates the live ticket workflow
+- COMPLETE — campaign-interest CTA opens the dedicated lead modal and never creates a Support Ticket
 - IN PROGRESS — resend produces one visible modal and one new-revision impression
 - IN PROGRESS — Getting Started desktop/mobile visual sign-off
 - COMPLETE — safe browser diagnostics and commit-versioned campaign assets
@@ -71,14 +74,34 @@
 
 - COMPLETE — generic first heartbeat creates one online instance and repeated heartbeats update it, protected by generated-client regression coverage
 - COMPLETE — optional backup timestamps accept valid Unix values and tolerate absent or malformed optional values
-- COMPLETE — unsupported managed-backup command polling removed from Agent 0.2.56; full command-queue architecture remains deferred
-- IN PROGRESS — production Younus recovery, disposable-client first-heartbeat acceptance, and existing-client regression sign-off
+- COMPLETE — unsupported managed-backup command polling removed in Agent 0.2.56 and retained by 0.2.57; full command-queue architecture remains deferred
+- COMPLETE — production Younus recovery and disposable-client first/second-heartbeat acceptance created one online instance with no duplicate; existing-client reporting remained functional
+- COMPLETE — Platform deployment used the backup-first release script and is rollbackable without deleting client, token, instance, or backup data
+- COMPLETE — Agent 0.2.57 is published for normal Home Assistant update; existing installations require no reinstall or token replacement
 
 ## Read-only Home Assistant user inventory
 
-- IMPLEMENTED / DEPLOYMENT PENDING — isolated Management Portal inventory, client-bound request queue, last-good cache, refresh timestamp, and sanitized failure states
+- COMPLETE — deployed isolated Management Portal inventory, client-bound request queue, last-good cache, refresh timestamp, and sanitized failure states
 - COMPLETE — Agent 0.2.57 source uses existing HA-token WebSocket authentication and `config/auth/list` without new add-on permissions
 - COMPLETE — older Agents remain compatible and continue heartbeat/reporting with the Users interface marked Not supported
 - COMPLETE — no password, user mutation, session, MFA, or last-login controls are present
-- COMPLETE — focused Agent, Platform, and frontend tests pass; broad backend suite has one unrelated pre-existing failure in the already-dirty managed-backup UI assertion
-- BLOCKED — Platform deployment and live compatible-installation verification pending clean release acceptance and Agent 0.2.57 installation on a validation system
+- COMPLETE — focused Agent, Platform, and frontend tests pass; Platform regression suite and production build passed at release validation
+- COMPLETE — Platform deployment provenance, schema, routes, unsupported older-Agent state, and Agent 0.2.57 compatibility verified
+
+
+## Client Guides & Help
+
+- COMPLETE — management upload/edit/replace/publish/feature/order/delete workflow for PNG/JPEG/WebP/PDF
+- COMPLETE — explicit all-client and selected-client assignment with tenant-bound metadata/file authorization
+- COMPLETE — client card list, full-size image/PDF viewers, conditional featured dashboard panel, and protected downloads
+- COMPLETE — browser-local New indicator and dismissible Guides spotlight; completed historical onboarding is not reset
+- COMPLETE — persistent `/guide-media` mount, additive migration, tests, production deployment, and rollback documentation
+
+## Campaign Leads
+
+- COMPLETE — authenticated Campaign Interest modal captures optional comments and preferred contact method/time
+- COMPLETE — dedicated lead/history persistence; no Support Ticket is created and existing Support Tickets are unaffected
+- COMPLETE — management CRM list/details, seven statuses, assignment, notes, history, search, and filtering
+- COMPLETE — immediate sales notification and client acknowledgement email attempt after persistence
+- COMPLETE — dashboard New/Open/Won/Lost/conversion metrics and retained campaign delivery analytics
+- COMPLETE — focused/backend/frontend tests, additive migration, production deployment, provenance, and health verification

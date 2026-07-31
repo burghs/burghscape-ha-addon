@@ -1,3 +1,24 @@
+# Platform Changelog
+
+## 2026-07-31 — Client Guides, HA Users, and Campaign Leads production baseline
+
+- Deployed read-only Home Assistant Users inventory with Agent 0.2.57 capability detection, administrator-only refresh, client-bound request claiming, sanitized failures, and persistent last-good results.
+- Added reusable Client Guides management and protected client delivery for PNG/JPEG/WebP/PDF files, including all-client/selected-client assignments, publish/featured/order controls, authorized previews/downloads, persistent `/guide-media`, and audit events.
+- Added conditional Featured Guides on the client dashboard, browser-local New indicators, and a dismissible one-time Guides spotlight without resetting completed onboarding.
+- Replaced campaign-interest Support Ticket creation with dedicated Campaign Leads, CRM statuses, assignment, internal notes/history, search/filtering, and management detail views. Existing Support Tickets remain unchanged.
+- Added immediate Campaign Lead sales notification to `sales@burghscape.co.za` and client acknowledgement email after lead persistence.
+- Added Campaign Lead dashboard reporting for New, Open, Won, Lost, and `Won / (Won + Lost)` conversion rate while retaining revision-aware campaign impression/snooze/dismiss/open/action analytics.
+- Added additive migrations `20260730_add_ha_user_inventory.sql`, `20260731_add_client_guides.sql`, and `20260731_add_campaign_leads.sql`; the standard deployment verifies all resulting tables.
+- Production Platform commit: `b6899de4058687156e8b293c426be52541c31526`. Deployment used the standard backup-first workflow; no Agent repository code was changed by the Platform releases.
+
+## 2026-07-30 — Generic first-heartbeat onboarding correction
+
+- Made a missing `HomeAssistantInstance` a fully supported first-heartbeat state: the authenticated client row is serialized, one online instance is created, and subsequent heartbeats update the same record.
+- Preserved transaction commit/rollback behavior, token isolation, offline-to-online notifications, and optional backup timestamp tolerance. No client-specific data repair, token replacement, or Agent reinstall is required.
+- Added permanent generated-client regression coverage for first/repeated heartbeats, duplicate protection, online management representation, isolation, optional timestamps, rollback, and retry.
+- Documented Agent 0.2.56 as the compatible release that removes unsupported `GET /api/backups/command` polling without adding a fake Platform endpoint or incomplete queue.
+- Deployed the Platform correction through `deploy/scripts/deploy_platform.sh`; rollback uses the same backup-first release workflow and preserves client, token, instance, and backup data.
+
 ## 2026-07-22 — RC1.4.3 versioned client onboarding
 
 - Final planned feature release before launch validation. Added authenticated, per-client-user, versioned server-side onboarding with start, resume, skip, complete, and replay transitions.
@@ -6,8 +27,6 @@
 - Coordinated login promotions through onboarding readiness and backend eligibility so suppressed campaigns record no impression or dismissal; normal eligibility resumes after skip/completion.
 - Added `backend/migrations/20260722_add_versioned_onboarding.sql`, onboarding API/state tests, release documentation, and a fresh Home Assistant launch-validation runbook.
 - RC1.4.3 is implemented and automated-test validated. Clean deployment validation, a real-client onboarding rehearsal, final fixes, and v1.0 remain pending.
-
-# Platform Changelog
 
 ## 2026-07-22 — RC1.4.2 Login Promotion Popups
 

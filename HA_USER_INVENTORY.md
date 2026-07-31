@@ -14,6 +14,10 @@ Agent 0.2.57 advertises `ha_users_read` through a separate subscription-token-au
 
 Management refresh creates a client-bound request with a 45-second expiry. The matching Agent claims it using its existing subscription token and returns either a strictly validated user list or one sanitized error code. Request IDs are random, tenant-bound, single-use, and terminal after success, failure, or expiry. Refresh requests are serialized on the client row to prevent concurrent duplicates.
 
+## Management interface and API
+
+Management → **HA Users** selects a client, reports capability/permission/unavailable state, displays the last successful refresh timestamp, and supports one manual refresh. The Platform endpoints are mounted at `/api/ha-users`; management uses `/clients/{client_id}` and `/refresh`, while Agent capability/claim/result endpoints use the Agent token. Older Agents show Not supported with refresh disabled. Agent 0.2.57 shows supported after capability advertisement even before the first inventory result.
+
 ## Capability and compatibility
 
 Older Agents do not advertise `ha_users_read`; the interface displays Not supported and their existing reporting continues normally. Capability presence does not imply that the configured HA token is an administrator. Home Assistant permission errors are reported as `permission_required`.
@@ -25,6 +29,9 @@ Supported sanitized failures are authentication required/rejected, permission re
 The Platform keeps the last successful user list and its `refreshed_at` timestamp. A later failure updates only the sanitized error state and does not erase the last good list. Cached data is historical, not authoritative current state; the portal always shows the last successful refresh time and provides a manual refresh action.
 
 ## Deployment and rollback
+
+The Platform schema and management UI are deployed in production. Agent 0.2.57 is compatible; each installation advertises capability only after its normal update/startup.
+
 
 `backend/migrations/20260730_add_ha_user_inventory.sql` adds only the inventory cache and request queue. The standard `deploy/scripts/deploy_platform.sh` applies it after creating the normal pre-deployment database backup.
 

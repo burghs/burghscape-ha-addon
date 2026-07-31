@@ -27,10 +27,13 @@ The portal loads onboarding state before requesting a login promotion. The backe
 
 ## Client experience and accessibility
 
-The eight-step tour covers portal home, Home Assistant status, backups, support, What’s New, account/theme controls, and Getting Started. Missing or mobile-hidden targets use a centered explanation and never block progress. The dialog traps focus, restores prior focus, locks background input, supports keyboard controls, uses visible focus, and honors reduced motion. Escape focuses Skip so it cannot silently complete or discard progress.
+The eight-step tour covers portal home, Home Assistant status, backups, support, What’s New, Guides & Help, account/theme controls, and Getting Started. Existing completed users receive a separate dismissible Guides spotlight without resetting onboarding. Missing or mobile-hidden targets use a centered explanation and never block progress. The dialog traps focus, restores prior focus, locks background input, supports keyboard controls, uses visible focus, and honors reduced motion. Escape focuses Skip so it cannot silently complete or discard progress.
 
 The Getting Started page contains installation guidance, token terminology, remote URL/mobile setup, support guidance, and the replay action. Nine responsive HTML/CSS interface illustrations temporarily replace unavailable screenshots; they are labelled as example views and never carry instructions that are absent from the surrounding text. `GETTING_STARTED_VISUALS.md` is the maintained replacement inventory. Validated screenshots may replace the illustrations later only after secrets are removed and responsive, accessibility, and performance checks pass.
 
 ## Testing
 
 Run `cd backend && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p "test_*.py"`, `cd frontend && npm run build`, and `cd frontend && node --test tests/*.test.mjs`. Full live validation follows `LAUNCH_VALIDATION_RC143.md`.
+## Agent first-heartbeat handoff
+
+Portal onboarding and Agent reporting are separate state machines. After the client installs and starts Agent 0.2.57, the Agent authenticates with the existing subscription token and posts `POST /api/agent/report`. If the client has no `HomeAssistantInstance`, the Platform creates one online instance inside the request transaction; later heartbeats update that same instance. A failed transaction rolls back and may be retried safely. No manual database intervention, token replacement, or Agent reinstall is part of normal onboarding. The Agent does not poll `/api/backups/command`; that unsupported command contract remains deferred.

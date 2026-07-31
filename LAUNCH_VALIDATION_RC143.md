@@ -1,6 +1,6 @@
 # RC1.4.3 Launch Validation
 
-Status: RC1.4.3 implemented and automated-test validated; clean deployment and real-client validation pending. Do not tag v1.0 until every item below has evidence and sign-off.
+Status: RC1.4.3 Platform features are deployed and provenance-verified through commit `b6899de4058687156e8b293c426be52541c31526`; broader v1.0 real-client and cross-device sign-off remains pending. Do not tag v1.0 until every item below has evidence and sign-off.
 
 ## Release baseline
 
@@ -19,7 +19,7 @@ Not implemented: subscriptions/billing, general notifications, popup carousels, 
 3. Configure the Agent with its Home Assistant long-lived access token and Burghscape subscription token. Never paste tokens into tickets or this record.
 4. Configure platform secrets outside Git: `DATABASE_URL`, `SECRET_KEY`, admin credentials, SMTP variables when email is required, Cloudflare credentials/domain, backup roots and R2 credentials when R2 is used, and optional `CAMPAIGN_MEDIA_ROOT`/`CAMPAIGN_MAX_IMAGE_BYTES`.
 5. Start database, Redis, backend, and frontend using the established deployment definitions. Confirm persistent mounts for database, backups, and campaign media.
-6. Apply migrations in chronological order, ending with `20260722_add_versioned_onboarding.sql`. Record migration output. Do not rerun a destructive database initialization.
+6. Apply migrations in chronological order through `20260731_add_campaign_leads.sql` using `deploy/scripts/deploy_platform.sh`. Record migration output. Do not rerun a destructive database initialization.
 7. Confirm `/api/health` reports service/database and accurately reports storage/email availability; open management login and client login over HTTPS.
 8. Confirm the backend reports version `1.4.3-rc`, static theme/onboarding assets load, and no startup tracebacks occur.
 
@@ -76,3 +76,14 @@ The onboarding migration is additive. Existing users at migration time are inser
 | Campaigns/popups | | | | |
 | Regression/security | | | | |
 | Real client | | | | |
+## Agent reporting acceptance
+
+For a generated client created through the normal management path, confirm the first authenticated heartbeat returns success, creates exactly one online `HomeAssistantInstance`, and appears Online in management. Send a second heartbeat and confirm the same instance ID is updated. Repeat transaction-failure/retry and token-isolation regression tests. Agent 0.2.57 must not call `/api/backups/command`; update an existing add-on through the normal Home Assistant update flow without reinstalling or replacing its token. Platform deployment and rollback must use `deploy/scripts/deploy_platform.sh` and preserve client data.
+
+
+## Phase G — Current feature acceptance
+
+1. HA Users: verify older-Agent Not supported behavior; with Agent 0.2.57 verify capability, one refresh, normalized roles/status/provider fields, last-success timestamp, sanitized failures, and heartbeat isolation.
+2. Client Guides: upload image/PDF, all/selected assignment, publish/feature/order, management and client preview/download, dashboard featured selection, spotlight dismissal, replacement cleanup, and authorization denial across clients.
+3. Campaign Leads: submit Interest with each contact method, confirm no Support Ticket, verify sales/client emails, CRM details, all seven statuses, assignment, notes/history, search/filter, dashboard metrics, and legacy CTA compatibility.
+4. Confirm `/health` and frontend `version.json` match the intended commit; verify `ha_user_inventories`, `ha_user_inventory_requests`, `client_guides`, `client_guide_assignments`, `campaign_leads`, and `campaign_lead_history` exist.

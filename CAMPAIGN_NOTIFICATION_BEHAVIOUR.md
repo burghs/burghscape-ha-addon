@@ -25,7 +25,7 @@ Metrics distinguish impressions, temporary closes, permanent dismissals, detail 
 
 ## CTA safety
 
-The API records an explicit CTA action type and only accepts approved portal routes, HTTPS, `mailto:`, and `tel:` destinations. User-info HTTPS URLs, HTTP, protocol-relative, JavaScript, data, newline, and backslash destinations are rejected. Supported administrator action types are no action, What’s New details, portal destination, support, WhatsApp, email, phone, external website, and custom URL. Existing label/URL campaigns remain compatible.
+The API records an explicit CTA action type and only accepts approved portal routes, HTTPS, `mailto:`, and `tel:` destinations. User-info HTTPS URLs, HTTP, protocol-relative, JavaScript, data, newline, and backslash destinations are rejected. Supported administrator action types are no action, What’s New details, portal destination, Campaign Lead interest, WhatsApp, email, phone, external website, and custom URL. Previously stored support action records are compatibility-mapped to Campaign Lead interest; they no longer open the Support Ticket form.
 
 ## Operational verification
 
@@ -37,7 +37,7 @@ Manual browser validation found that the popup coordinator could remain locally 
 
 Portal HTML is returned with `Cache-Control: no-store`. Campaign, onboarding, and What’s New scripts include the exact Platform build commit in their query string, preventing the four-hour Cloudflare browser-cache setting from retaining an older coordinator after deployment. There is no service worker.
 
-The popup and What’s New detail views render campaign type, image, title, summary/body, prices, and a configured primary CTA. Support CTAs open the existing dashboard support-ticket form and prepopulate a campaign/revision reference. Popup close, Escape, and backdrop remain temporary snooze actions; **Dismiss / Mark as read** is permanent for that revision.
+The popup and What’s New detail views render campaign type, image, title, summary/body, prices, and a configured primary CTA. Campaign-interest CTAs open the dedicated Interest modal and create a Campaign Lead. The modal collects optional comments plus preferred contact method/time; Support Tickets remain separate. Popup close, Escape, and backdrop remain temporary snooze actions; **Dismiss / Mark as read** is permanent for that revision.
 
 Client-side diagnostics are available in the authenticated dashboard console without secrets:
 
@@ -50,7 +50,7 @@ The state reports script version, Platform build commit, SSE connection state, l
 
 Archived campaigns are retained for audit and hidden from the default active management list. Only drafts may be permanently deleted. Published/unpublished campaigns must be archived; resend creates a revision and cannot be double-submitted within five seconds.
 
-Email notification is deferred until after v1. Existing SMTP helpers do not provide revision-scoped queued delivery, per-user outcome tracking, or failure isolation adequate for launch. Email is not a substitute for portal delivery.
+Campaign broadcast email remains deferred. Campaign Lead submission is different: after the lead transaction commits, the Platform immediately attempts a notification to `sales@burghscape.co.za` and an acknowledgement to the submitting client. These transactional lead emails do not replace portal campaign delivery or revision analytics.
 
 ## Manual acceptance checklist
 
@@ -59,7 +59,7 @@ Email notification is deferred until after v1. Existing SMTP helpers do not prov
 3. Confirm the modal appears within a few seconds through SSE or no later than 15 seconds through polling.
 4. Confirm campaign type, image, price, summary, CTA, Remind me later, Dismiss / Mark as read, and close icon are visible.
 5. Close temporarily and confirm unread remains; test the configured reminder policy.
-6. Use the support CTA and confirm the dashboard support form opens with campaign/revision context.
+6. Use the Campaign Lead CTA, submit contact preferences/comments, confirm the CRM lead and both email attempts, and confirm no Support Ticket is created.
 7. Dismiss and confirm the unread count falls and the same revision does not return.
 8. Resend from admin, confirm the displayed revision increments, and confirm one new modal/impression appears.
 9. Repeat at desktop, tablet, iPhone/Android width, and Home Assistant webview width.

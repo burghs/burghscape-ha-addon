@@ -9,7 +9,7 @@ Burghscape/MyBeacon has two independently released products:
 1. **Platform** — management frontend, Client Portal, API, PostgreSQL schema, Redis-backed/in-memory services, campaign system, backups, support, tunnels, themes, and client onboarding.
 2. **Agent** — the Home Assistant add-on installed on client systems. It reports telemetry, authenticates with a subscription token, coordinates backups, and configures the managed tunnel.
 
-They integrate over authenticated Platform APIs but are not the same deployable. Platform release `1.4.3-rc` and Agent release `0.2.55` are both valid at the same time.
+They integrate over authenticated Platform APIs but are not the same deployable. Platform release `1.4.3-rc` and Agent release `0.2.57` are independently versioned and compatible. Agent 0.2.57 retains the 0.2.56 backup-command correction and adds isolated read-only Home Assistant user inventory.
 
 ## Authoritative repositories and branches
 
@@ -24,7 +24,7 @@ The shared GitHub repository currently carries two product branches. Branch name
 
 ## Long-term release strategy
 
-**Independent products and independent versions (Option A) is authoritative.** Platform uses product RC versions such as `1.4.3-rc` and eventually stable `1.0.0`. Agent uses semantic add-on versions such as `0.2.55`. Neither version implies the other. Compatibility changes must be documented in both release notes, but unrelated releases do not receive artificial matching bumps.
+**Independent products and independent versions (Option A) is authoritative.** Platform uses product RC versions such as `1.4.3-rc` and eventually stable `1.0.0`. Agent uses semantic add-on versions such as `0.2.57`. Neither version implies the other. Compatibility changes must be documented in both release notes, but unrelated releases do not receive artificial matching bumps.
 
 ## Dependency map
 
@@ -36,7 +36,7 @@ GitHub origin/master -> Platform source -> clean Git archive build -> backend/fr
                                       -> Cloudflare API/admin/portal tunnels
 
 GitHub origin/main   -> Agent repository metadata -> Home Assistant repository refresh
-                                      -> Agent 0.2.55 add-on image/build
+                                      -> Agent 0.2.57 add-on image/build
                                       -> client Home Assistant
                                       -> Platform Agent/tunnel/backup APIs
 
@@ -56,7 +56,7 @@ Production-like Platform releases must use `deploy/scripts/deploy_platform.sh`. 
 - embeds the exact commit and version in both artifacts;
 - uses `deploy/releases/docker-compose.platform.yml` to remove the development `/app` source bind and pin commit-tagged images;
 - recreates only backend and frontend;
-- verifies backend health, frontend `version.json`, and onboarding schema.
+- verifies backend health, frontend `version.json`, and expected onboarding, TOTP, HA user inventory, Client Guides, and Campaign Leads schema.
 
 Do not deploy with a bare `docker compose up` from a dirty development tree. Do not infer deployment from `git push`, file mtimes, bind-mounted source, image creation time, or a successful Home Assistant update.
 
@@ -103,13 +103,13 @@ The Platform is verified only when GitHub `origin/master`, local `master`, backe
 
 Implemented Platform subscription functionality consists of client tiers, included-support-hour presentation, subscription-token creation/rotation/deactivation, and Agent authentication. Automated billing, payment collection, self-service plan changes/cancellation, invoices, and entitlement enforcement are not implemented and must not be represented as complete.
 
-Implemented campaign functionality includes admin lifecycle, targeting, client What’s New/read state, popup eligibility, CTA, metrics, dismissal reset, and onboarding suppression. Every eligible published campaign appears in What’s New; popup notification is an independent optional delivery channel and audience selection is independent of delivery. Popup-enabled campaigns are shown once when first discovered. The authenticated portal checks at load, when a hidden tab becomes visible, and every 30 seconds while visible, so an already-open online client requires no refresh but normal discovery may take up to approximately 30 seconds; this is not push delivery. “Publish immediately” leaves `starts_at` empty and uses the authoritative server-generated UTC `published_at` as its effective start. Scheduled dates are entered in browser-local time, converted explicitly to UTC, and stored as UTC. Publication rejects campaigns whose end time has already passed. Unread navigation badges and the dashboard announcement banner use the same server-side read count. Scheduled future campaigns are intentionally absent from client APIs.
+Implemented campaign functionality includes administrator lifecycle, targeting, What’s New/read state, optional revision-aware popup delivery, SSE wake-up with polling recovery, media, CTA validation, analytics, deliberate resend, and onboarding suppression. Campaign interest uses the dedicated Campaign Leads subsystem: authenticated clients submit contact preferences/comments, the Platform persists lead/history records, and sales/client acknowledgement emails are attempted immediately. Support Tickets are independent. Dashboard and CRM reporting show New, Open, Won, Lost, and conversion rate. See `CAMPAIGN_NOTIFICATION_BEHAVIOUR.md` and `CAMPAIGN_LEADS.md`.
 
 ## Common mistakes and things never to assume
 
 - Never assume `main` and `master` describe the same product.
 - Never assume the highest visible number is the Platform version.
-- Never assume Agent 0.2.55 contains Platform 1.4.3.
+- Never assume Agent 0.2.57 contains Platform 1.4.3; they are independently released products joined by the documented API contract.
 - Never assume GitHub push deployed Docker.
 - Never assume bind-mounted files were reloaded by a non-reloading Uvicorn worker.
 - Never assume `Base.metadata.create_all` upgraded an existing table/schema.
@@ -137,7 +137,7 @@ Published eligible campaigns always use What’s New; popup notification is opti
 
 The authoritative online-delivery contract is authenticated SSE as the fast signal plus a visible-tab 15-second polling fallback. The popup coordinator performs an immediate load/visibility check and never relies solely on a one-shot onboarding browser event; the backend onboarding state is authoritative. Portal HTML is `no-store`, and portal campaign scripts are cache-busted with the exact deployed commit because Cloudflare browser cache TTL may be four hours. Use `window.MyBeaconCampaignDiagnostics.getState()` in an authenticated client console to distinguish stale build, disconnected SSE, poll timing, API suppression, JavaScript errors, and modal state.
 
-Support CTAs use the existing client support-ticket form with campaign/revision context. What’s New and popup views both render safe CTA fields. Only drafts may be deleted; delivered campaigns are archived. Campaign email remains post-v1 until a revision-scoped queue and per-recipient outcome model exist.
+Campaign-interest CTAs open the dedicated Interest modal and create Campaign Leads; they never create Support Tickets. Previously stored `support` CTA records are compatibility-mapped to the same lead flow. What’s New and popup views render safe CTA fields. Only drafts may be deleted; delivered campaigns are archived. Campaign broadcast email remains deferred, but each Campaign Lead immediately attempts one sales notification and one client acknowledgement email.
 
 ## Optional client TOTP authentication
 
@@ -145,6 +145,27 @@ Client two-factor authentication Phase 1 is an optional RFC 6238 authenticator-a
 
 ## Agent reporting and first-heartbeat contract (2026-07-30)
 
-A valid subscription token scopes `POST /api/agent/report` to its active client. A missing `HomeAssistantInstance` is the supported first-onboarding state: the Platform serializes creation on the authenticated client row, creates one online instance, and later heartbeats update it without client-specific intervention. Optional malformed backup timestamps do not reject otherwise valid telemetry. See `AGENT_REPORTING_CONTRACT.md`.
+A valid subscription token scopes `POST /api/agent/report` to its active client. A missing `HomeAssistantInstance` is the supported first-onboarding state: within the existing request transaction, the Platform locks the authenticated client row, creates exactly one online instance, flushes it, and commits through the database dependency. Later and retried heartbeats select and update that same instance, so onboarding requires no database intervention, token replacement, or Agent reinstall. Failed requests roll back cleanly and can be retried. Optional malformed backup timestamps do not reject otherwise valid telemetry. See `AGENT_REPORTING_CONTRACT.md`.
 
-The Platform has no managed-backup command-queue contract. Agent 0.2.56 disables the unsupported `/api/backups/command` poll; command polling remains deferred while existing backup telemetry, configuration, state, manual one-shot, upload, and download paths remain supported.
+The Platform has no managed-backup command-queue contract. Agent 0.2.57 retains the 0.2.56 correction that disables the unsupported `/api/backups/command` poll; command polling remains deferred while existing backup telemetry, configuration, state, manual one-shot, upload, and download paths remain supported.
+
+## Read-only Home Assistant user inventory contract (2026-07-30)
+
+Agent 0.2.57 adds `ha_users_read` as an independently advertised capability. Management refresh uses a separate 45-second client-bound request path; the Agent uses its existing HA token with Home Assistant `/api/websocket` and `config/auth/list`, strictly normalizes the supported read-only fields, and returns no secrets. The Platform caches the last successful list and never erases it on a later failure. Older Agents remain compatible and continue normal reporting with the Users interface marked Not supported.
+
+This subsystem does not use or change `POST /api/agent/report`, first-heartbeat instance creation, online state, tunnel/entity telemetry, backups, TOTP, or onboarding. No add-on manifest privilege was added. Phase 1 has no Home Assistant user mutations, password/session controls, MFA, or last-login reporting. See `HA_USER_INVENTORY.md`.
+
+
+## Client Guides & Help contract (2026-07-31)
+
+Management administrators publish protected PNG, JPEG, WebP, or PDF guides without a frontend rebuild. Visibility is explicit (`all` or selected-client assignments), published state gates client access, display order controls presentation, and the highest-priority visible featured guide appears on the client dashboard. Preview/download authorization is repeated at the file endpoint. Files use random managed names under persistent `/guide-media`; metadata never exposes internal paths.
+
+The Guides spotlight and New acknowledgement are browser-local and do not create a server notification system. Existing onboarding completion is not reset. See `CLIENT_GUIDES.md`.
+
+## Campaign Leads contract (2026-07-31)
+
+`POST /api/portal/campaigns/{campaign_id}/interest` creates a tenant-bound sales lead and first history entry. Status, assignment, notes, filtering, details, and reporting live under the management-only Campaign Leads subsystem. Lead statuses are New, Contacted, Quoted, Scheduled, Won, Lost, and Cancelled. Sales and client acknowledgement emails are attempted after persistence. Existing Support Tickets are unaffected. See `CAMPAIGN_LEADS.md`.
+
+## Current production provenance (2026-07-31)
+
+Platform `1.4.3-rc` is deployed from `b6899de4058687156e8b293c426be52541c31526`. The deployed backend/frontend provenance, Client Guides schema/storage, HA Users schema/routes, and Campaign Leads schema/routes were verified through the standard backup-first deployment workflow.
