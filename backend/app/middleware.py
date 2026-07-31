@@ -27,6 +27,7 @@ PUBLIC_PATHS = {
     "/portal",
     "/portal/change-password",
     "/portal/getting-started",
+    "/portal/guides",
     "/portal/whats-new",
     "/portal/security",
     "/portal/two-factor",

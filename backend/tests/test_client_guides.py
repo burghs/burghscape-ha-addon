@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event,select
 from sqlalchemy.ext.asyncio import async_sessionmaker,create_async_engine
 from admin_auth import get_current_admin
+from middleware import AdminAuthMiddleware
 from database import Base,get_db
 from models import Client,ClientGuide,ClientGuideAssignment,ClientStatus,ClientUser
 from routers import client_guides
@@ -47,6 +48,9 @@ class ClientGuidesTests(unittest.TestCase):
  def test_management_and_portal_authentication_required(self):
   app=FastAPI();app.include_router(client_guides.router);c=TestClient(app)
   self.assertEqual(c.get('/api/admin/client-guides').status_code,401);self.assertEqual(c.get('/api/portal/guides').status_code,401)
+ def test_portal_guides_page_bypasses_admin_auth_and_uses_portal_auth(self):
+  app=FastAPI();app.include_router(client_guides.router);app.add_middleware(AdminAuthMiddleware);c=TestClient(app)
+  response=c.get('/portal/guides');self.assertEqual(response.status_code,401);self.assertEqual(response.json()['detail'],'Portal authentication required')
  def test_image_pdf_type_size_and_signature_validation(self):
   self.assertEqual(self.create().status_code,201);self.assertEqual(self.create(file=PDF,mime='application/pdf',name='guide.pdf').status_code,201)
   self.assertEqual(self.create(file=b'bad',mime='text/plain',name='bad.txt').status_code,415)
@@ -55,6 +59,7 @@ class ClientGuidesTests(unittest.TestCase):
  def test_visibility_publish_tenant_isolation_and_file_authorization(self):
   r=self.create({'visibility_mode':'selected','client_ids':'1'});gid=r.json()['id'];cookies=self.portal(1)
   self.assertEqual(len(self.client.get('/api/portal/guides',cookies=cookies).json()),1)
+  self.assertEqual(self.client.get('/portal/guides',cookies=cookies).status_code,200)
   self.assertEqual(self.client.get(f'/api/portal/guides/{gid}/file',cookies=cookies).status_code,200)
   cookies=self.portal(2);self.assertEqual(self.client.get('/api/portal/guides',cookies=cookies).json(),[]);self.assertEqual(self.client.get(f'/api/portal/guides/{gid}/file',cookies=cookies).status_code,404)
   data={k:v for k,v in r.json().items() if k in {'title','description','category','visibility_mode','client_ids','published','featured','display_order'}};data['published']=False
