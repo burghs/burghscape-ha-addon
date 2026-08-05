@@ -34,10 +34,10 @@ class RC143Tests(unittest.TestCase):
   asyncio.run(run())
  def test_skip_idempotence_auth_and_frontend_contract(self):
   app=FastAPI();app.include_router(onboarding.router);client=TestClient(app);self.assertEqual(client.get("/api/portal/onboarding").status_code,401)
-  js=(ROOT/"app/static/onboarding.js").read_text();popup=(ROOT/"app/static/campaign-popup.js").read_text();portal=(ROOT/"app/routers/portal.py").read_text();migration=(ROOT/"migrations/20260722_add_versioned_onboarding.sql").read_text()
+  js=(ROOT/"app/static/onboarding.js").read_text();popup=(ROOT/"app/static/campaign-popup.js").read_text();portal=(ROOT/"app/routers/portal.py").read_text();theme=(ROOT/"app/static/theme.css").read_text();migration=(ROOT/"migrations/20260722_add_versioned_onboarding.sql").read_text()
   for value in ("onboarding:ready","prefers-reduced-motion","e.key", "current_step","visualViewport","orientationchange","positionTour","highlightNode"): self.assertIn(value,js)
   self.assertIn('id="onboarding-spotlight"',portal);self.assertIn("#onboarding-modal {{ z-index:70",portal);self.assertNotIn('target.classList.add("onboarding-spotlight")',js)
-  self.assertEqual(portal.count("data-onboarding-dimmer="),4);self.assertIn("positionDimmers(v,hole)",js);self.assertIn("background:transparent",portal);self.assertNotIn("9999px",portal)
+  self.assertEqual(portal.count("data-onboarding-dimmer="),4);self.assertIn("positionDimmers(v,hole)",js);self.assertIn("background:transparent",portal);self.assertIn("html[data-theme] #onboarding-modal { background: transparent !important; }",theme);self.assertNotIn("9999px",portal)
   self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
  def test_spotlight_cutout_covers_every_step_and_viewport(self):
   targets=("instance","backups","support","campaigns","account","guides","getting-started");js=(ROOT/"app/static/onboarding.js").read_text()

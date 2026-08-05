@@ -97,6 +97,7 @@ html[data-theme] .table-body { background: var(--mb-table) !important; }
 html[data-theme] .table-body tr { border-color: var(--mb-border) !important; }
 html[data-theme] .modal-backdrop,
 html[data-theme] .portal-modal { background: var(--mb-backdrop) !important; }
+html[data-theme] #onboarding-modal { background: transparent !important; }
 html[data-theme] .progress-track,
 html[data-theme] .progress-bar { background: rgba(100, 116, 139, .22) !important; }
 html[data-theme="light"] .btn-secondary,
