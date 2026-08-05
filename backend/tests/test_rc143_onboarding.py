@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
 from starlette.requests import Request
 from database import Base
 from models import Client,ClientStatus,ClientUser,ClientOnboardingState
-from routers import onboarding,campaign_popups
+from routers import onboarding,campaign_popups,portal
 from routers.portal_state import portal_sessions,popup_evaluated_sessions
 
 def req(token): return Request({"type":"http","method":"GET","path":"/","headers":[(b"cookie",f"portal_token={token}".encode())]})
@@ -54,6 +54,13 @@ class RC143Tests(unittest.TestCase):
   self.assertIn('id="onboarding-spotlight"',portal);self.assertIn("#onboarding-modal {{ z-index:70",portal);self.assertNotIn('target.classList.add("onboarding-spotlight")',js)
   self.assertEqual(portal.count("data-onboarding-dimmer="),4);self.assertIn("positionDimmers(v,hole)",js);self.assertIn("background:transparent",portal);self.assertIn("html[data-theme] #onboarding-modal { background: transparent !important; }",theme);self.assertNotIn("9999px",portal)
   self.assertIn("CLIENT_ONBOARDING_TOUR_ENABLED: bool = False",(ROOT/"app/config.py").read_text());self.assertIn("tour_enabled() and",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
+ def test_disabled_server_render_omits_tour_ui_and_asset(self):
+  with patch.object(portal.get_settings(),"CLIENT_ONBOARDING_TOUR_ENABLED",False): rendered=portal.onboarding_render_html("test-build")
+  self.assertNotIn('<div id="onboarding-modal"',rendered);self.assertNotIn('<div class="onboarding-dimmer',rendered);self.assertNotIn('<div id="onboarding-spotlight"',rendered);self.assertNotIn('<script src="/static/onboarding.js',rendered)
+  self.assertIn("classList.remove('onboarding-active'",rendered);self.assertIn("removeAttribute('inert')",rendered);self.assertIn("style.removeProperty('overflow')",rendered);self.assertNotIn('/api/portal/onboarding',rendered)
+ def test_enabled_server_render_retains_reenable_path(self):
+  with patch.object(portal.get_settings(),"CLIENT_ONBOARDING_TOUR_ENABLED",True): rendered=portal.onboarding_render_html("test-build")
+  self.assertIn('id="onboarding-modal"',rendered);self.assertEqual(rendered.count('data-onboarding-dimmer='),4);self.assertIn('id="onboarding-spotlight"',rendered);self.assertIn('/static/onboarding.js?v=test-build',rendered)
  def test_spotlight_cutout_covers_every_step_and_viewport(self):
   targets=("instance","backups","support","campaigns","account","guides","getting-started");js=(ROOT/"app/static/onboarding.js").read_text()
   self.assertTrue(all(f'target:"{target}"' in js for target in targets))

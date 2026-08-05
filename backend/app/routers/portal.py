@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
+from config import get_settings
 from models import Backup, Client, SupportTicket, ClientUser, HomeAssistantInstance, SubscriptionToken
 from routers.backups import build_backup_file_response, is_customer_backup_available, meaningful_backup_filename
 from support_hours import calculate_support_hours, format_hours, support_ticket_notice
@@ -19,6 +20,35 @@ def portal_build_commit():
     return escape(os.environ.get("BUILD_COMMIT", "development"), quote=True)
 
 ADDON_REPOSITORY_URL = "https://github.com/burghs/burghscape-ha-addon"
+
+ONBOARDING_UI_HTML = """
+    <div class="onboarding-dimmer hidden" data-onboarding-dimmer="top" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="right" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="bottom" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="left" aria-hidden="true"></div><div id="onboarding-spotlight" class="onboarding-spotlight hidden" aria-hidden="true"></div><div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
+    <script src="/static/onboarding.js?v={build_commit}"></script>
+"""
+
+ONBOARDING_DISABLED_CLEANUP_HTML = """<script>
+(function(){
+    document.querySelectorAll('#onboarding-modal,#onboarding-spotlight,[data-onboarding-dimmer]').forEach(function(node){node.remove();});
+    var body=document.body;
+    if(body){
+        body.classList.remove('onboarding-active','onboarding-open','tour-active','tour-open');
+        body.style.removeProperty('overflow');
+        body.removeAttribute('inert');
+        body.removeAttribute('aria-hidden');
+        body.querySelectorAll('[inert],[data-onboarding-inert],[data-tour-inert]').forEach(function(node){node.removeAttribute('inert');node.removeAttribute('data-onboarding-inert');node.removeAttribute('data-tour-inert');});
+        body.querySelectorAll('[data-onboarding-aria-hidden="true"],[data-tour-aria-hidden="true"]').forEach(function(node){node.removeAttribute('aria-hidden');node.removeAttribute('data-onboarding-aria-hidden');node.removeAttribute('data-tour-aria-hidden');});
+    }
+    ['mybeacon-onboarding-ui','mybeacon-onboarding-active','mybeacon-onboarding-step','mybeacon-tour-ui','mybeacon-tour-active','mybeacon-tour-step'].forEach(function(key){
+        try{localStorage.removeItem(key);}catch(_){}
+        try{sessionStorage.removeItem(key);}catch(_){}
+    });
+})();
+</script>"""
+
+def onboarding_render_html(build_commit):
+    if get_settings().CLIENT_ONBOARDING_TOUR_ENABLED:
+        return ONBOARDING_UI_HTML.format(build_commit=build_commit)
+    return ONBOARDING_DISABLED_CLEANUP_HTML
 
 # In-memory session store (use JWT or Redis in production)
 from routers.portal_state import portal_sessions
@@ -118,6 +148,7 @@ PORTAL_HTML = """<!DOCTYPE html>
     <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body class="bg-gray-950 text-gray-200 min-h-screen bg-grid" id="app-body">
+    {onboarding_preinteraction_html}
     <nav class="card border-b border-white/10 px-4 md:px-6 py-3">
         <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
@@ -352,8 +383,7 @@ PORTAL_HTML = """<!DOCTYPE html>
             else {{ const data = await res.json(); msgEl.textContent = data.detail || 'Failed'; msgEl.className = 'text-sm mt-2 text-red-400'; }}
         }}
     </script>
-    <div class="onboarding-dimmer hidden" data-onboarding-dimmer="top" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="right" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="bottom" aria-hidden="true"></div><div class="onboarding-dimmer hidden" data-onboarding-dimmer="left" aria-hidden="true"></div><div id="onboarding-spotlight" class="onboarding-spotlight hidden" aria-hidden="true"></div><div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
-        <script src="/static/onboarding.js?v={build_commit}"></script>
+    {onboarding_ui_html}
     <div id="login-promotion-modal" class="campaign-modal-backdrop modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
         <div role="document" tabindex="-1" class="campaign-modal-card modal-card p-5 sm:p-7">
             <div class="flex justify-end"><button type="button" data-popup-snooze class="touch-action" aria-label="Remind me later">Close</button></div>
@@ -1621,8 +1651,13 @@ async def client_portal(request: Request):
             native_items.append('<p class="mt-2 text-sm text-gray-400">Detailed Home Assistant scheduling information is unavailable.</p>')
         native_backup_html = "".join(native_items)
 
+        build_commit = portal_build_commit()
+        tour_enabled = get_settings().CLIENT_ONBOARDING_TOUR_ENABLED
+        onboarding_html = onboarding_render_html(build_commit)
         return HTMLResponse(PORTAL_HTML.format(
-            build_commit=portal_build_commit(),
+            build_commit=build_commit,
+            onboarding_preinteraction_html=onboarding_html if not tour_enabled else "",
+            onboarding_ui_html=onboarding_html if tour_enabled else "",
             onboarding_banner_html=onboarding_banner_html,
             setup_nav_label=setup_nav_label,
             setup_nav_class=setup_nav_class,
