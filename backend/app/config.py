@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Burghscape Home Cloud"
     APP_VERSION: str = "1.4.3-rc"
     DEBUG: bool = False
+    CLIENT_ONBOARDING_TOUR_ENABLED: bool = False
     
     DATABASE_URL: str = "sqlite+aiosqlite:///./burghscape.db"
     REDIS_URL: str = "redis://:burghscape123@redis:6379/0"

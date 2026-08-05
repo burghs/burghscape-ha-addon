@@ -2,7 +2,7 @@
 
 ## Status and architecture
 
-RC1.4.3 is the final planned feature release before launch validation. The Client Portal remains server-rendered. `ClientOnboardingState` is the authoritative per-user/per-version record; browser storage is not used by the tour. The coordinator in `/static/onboarding.js` owns loading, step navigation, focus, target fallback, completion, skip, replay, and promotion readiness.
+The guided tour is operationally disabled by default. CLIENT_ONBOARDING_TOUR_ENABLED is false when absent; GET state returns enabled false and should_start false, and mutation endpoints return HTTP 409 without changing onboarding records. Refreshing the portal removes any prior client-side overlay. The Client Portal remains server-rendered. `ClientOnboardingState` is the authoritative per-user/per-version record; browser storage is not used by the tour. The coordinator in `/static/onboarding.js` owns loading, step navigation, focus, target fallback, completion, skip, replay, and promotion readiness.
 
 The current version is `rc1.4.3`. States are `not_started`, `in_progress`, `completed`, and `skipped`, with current step and start/completion/skip/replay timestamps. Completion history remains intact during replay.
 

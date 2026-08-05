@@ -1,4 +1,5 @@
 import asyncio,sys,unittest
+from unittest.mock import patch
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"app"))
 from fastapi import FastAPI
@@ -31,6 +32,20 @@ class RC143Tests(unittest.TestCase):
     future=ClientOnboardingState(client_user_id=user.id,onboarding_version="rc1.5.0",status="not_started");db.add(future);await db.commit();self.assertEqual((await onboarding.get_onboarding(req("new"),db))["onboarding_version"],"rc1.4.3")
     for t in ("new","other"): portal_sessions.pop(t,None);popup_evaluated_sessions.discard(t)
    await engine.dispose()
+  with patch.object(onboarding,"tour_enabled",return_value=True): asyncio.run(run())
+ def test_disabled_default_preserves_existing_state_and_blocks_mutations(self):
+  async def run():
+   engine=create_async_engine("sqlite+aiosqlite:///:memory:");
+   async with engine.begin() as c: await c.run_sync(Base.metadata.create_all)
+   sessions=async_sessionmaker(engine,expire_on_commit=False)
+   async with sessions() as db:
+    client=Client(name="Disabled",email="disabled",subdomain="disabled",status=ClientStatus.ACTIVE);db.add(client);await db.flush();user=ClientUser(client_id=client.id,name="Disabled",email="disabled-user",password_hash="x",is_active=True);db.add(user);await db.flush();state=ClientOnboardingState(client_user_id=user.id,onboarding_version="rc1.4.3",status="in_progress",current_step=2,replay_active=True);db.add(state);await db.commit();portal_sessions["disabled"]=user.id
+    result=await onboarding.get_onboarding(req("disabled"),db);self.assertFalse(result["enabled"]);self.assertFalse(result["should_start"]);self.assertEqual(result["disabled_reason"],"Client onboarding tour is disabled")
+    before=(state.status,state.current_step,state.replay_active,state.last_replay_at)
+    for action in (onboarding.start_onboarding,onboarding.replay_onboarding):
+     with self.assertRaisesRegex(Exception,"Client onboarding tour is disabled"): await action(req("disabled"),db)
+    await db.refresh(state);self.assertEqual(before,(state.status,state.current_step,state.replay_active,state.last_replay_at));portal_sessions.pop("disabled",None)
+   await engine.dispose()
   asyncio.run(run())
  def test_skip_idempotence_auth_and_frontend_contract(self):
   app=FastAPI();app.include_router(onboarding.router);client=TestClient(app);self.assertEqual(client.get("/api/portal/onboarding").status_code,401)
@@ -38,7 +53,7 @@ class RC143Tests(unittest.TestCase):
   for value in ("onboarding:ready","prefers-reduced-motion","e.key", "current_step","visualViewport","orientationchange","positionTour","highlightNode"): self.assertIn(value,js)
   self.assertIn('id="onboarding-spotlight"',portal);self.assertIn("#onboarding-modal {{ z-index:70",portal);self.assertNotIn('target.classList.add("onboarding-spotlight")',js)
   self.assertEqual(portal.count("data-onboarding-dimmer="),4);self.assertIn("positionDimmers(v,hole)",js);self.assertIn("background:transparent",portal);self.assertIn("html[data-theme] #onboarding-modal { background: transparent !important; }",theme);self.assertNotIn("9999px",portal)
-  self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
+  self.assertIn("CLIENT_ONBOARDING_TOUR_ENABLED: bool = False",(ROOT/"app/config.py").read_text());self.assertIn("tour_enabled() and",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
  def test_spotlight_cutout_covers_every_step_and_viewport(self):
   targets=("instance","backups","support","campaigns","account","guides","getting-started");js=(ROOT/"app/static/onboarding.js").read_text()
   self.assertTrue(all(f'target:"{target}"' in js for target in targets))

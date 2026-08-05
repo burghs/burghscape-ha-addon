@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from admin_auth import get_current_admin
 from database import get_db
 from models import Campaign, CampaignPopupEvent, CampaignPopupState, CampaignReadState
-from routers.onboarding import current_state
+from routers.onboarding import current_state, tour_enabled
 from routers.campaigns import client_action_url, now_utc, portal_user, visible_campaign, visible_clause
 
 router=APIRouter()
@@ -47,7 +47,7 @@ def state_allows(c,state,request,now):
 async def login_popup(request:Request,db:AsyncSession=Depends(get_db)):
     user=await portal_user(request,db)
     onboarding=await current_state(db,user.id)
-    if onboarding is None or onboarding.status in {"not_started","in_progress"} or onboarding.replay_active:return {"promotion":None,"suppressed_by_onboarding":True}
+    if tour_enabled() and (onboarding is None or onboarding.status in {"not_started","in_progress"} or onboarding.replay_active):return {"promotion":None,"suppressed_by_onboarding":True}
     now=now_utc()
     campaigns=(await db.execute(select(Campaign).where(visible_clause(user.client_id,now),Campaign.popup_enabled==True).order_by(Campaign.priority.desc(),Campaign.id.desc()))).scalars().all()
     blocked=[]
