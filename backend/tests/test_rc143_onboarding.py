@@ -37,5 +37,18 @@ class RC143Tests(unittest.TestCase):
   js=(ROOT/"app/static/onboarding.js").read_text();popup=(ROOT/"app/static/campaign-popup.js").read_text();portal=(ROOT/"app/routers/portal.py").read_text();migration=(ROOT/"migrations/20260722_add_versioned_onboarding.sql").read_text()
   for value in ("onboarding:ready","prefers-reduced-motion","e.key", "current_step","visualViewport","orientationchange","positionTour","highlightNode"): self.assertIn(value,js)
   self.assertIn('id="onboarding-spotlight"',portal);self.assertIn("#onboarding-modal {{ z-index:70",portal);self.assertNotIn('target.classList.add("onboarding-spotlight")',js)
+  self.assertEqual(portal.count("data-onboarding-dimmer="),4);self.assertIn("positionDimmers(v,hole)",js);self.assertIn("background:transparent",portal);self.assertNotIn("9999px",portal)
   self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
+ def test_spotlight_cutout_covers_every_step_and_viewport(self):
+  targets=("instance","backups","support","campaigns","account","guides","getting-started");js=(ROOT/"app/static/onboarding.js").read_text()
+  self.assertTrue(all(f'target:"{target}"' in js for target in targets))
+  for width,height in ((1440,900),(768,1024),(390,844)):
+   for index,_target in enumerate(targets):
+    target_width=min(240,width-48);target_height=36;left=24+(index*37)%max(1,width-target_width-48);top=24+(index*71)%max(1,height-target_height-48);pad=7
+    hole=(max(4,left-pad),max(4,top-pad),min(width-4,left+target_width+pad),min(height-4,top+target_height+pad))
+    panels=((0,0,width,hole[1]),(hole[2],hole[1],width-hole[2],hole[3]-hole[1]),(0,hole[3],width,height-hole[3]),(0,hole[1],hole[0],hole[3]-hole[1]))
+    center=(left+target_width/2,top+target_height/2)
+    self.assertFalse(any(x<=center[0]<x+w and y<=center[1]<y+h for x,y,w,h in panels),f"{_target} dimmed at {width}x{height}")
+    self.assertGreater(hole[2]-hole[0],target_width);self.assertGreater(hole[3]-hole[1],target_height)
+
 if __name__=="__main__": unittest.main()
