@@ -35,6 +35,7 @@ class RC143Tests(unittest.TestCase):
  def test_skip_idempotence_auth_and_frontend_contract(self):
   app=FastAPI();app.include_router(onboarding.router);client=TestClient(app);self.assertEqual(client.get("/api/portal/onboarding").status_code,401)
   js=(ROOT/"app/static/onboarding.js").read_text();popup=(ROOT/"app/static/campaign-popup.js").read_text();portal=(ROOT/"app/routers/portal.py").read_text();migration=(ROOT/"migrations/20260722_add_versioned_onboarding.sql").read_text()
-  for value in ("onboarding:ready","prefers-reduced-motion","e.key", "current_step"): self.assertIn(value,js)
+  for value in ("onboarding:ready","prefers-reduced-motion","e.key", "current_step","visualViewport","orientationchange","positionTour","highlightNode"): self.assertIn(value,js)
+  self.assertIn('id="onboarding-spotlight"',portal);self.assertIn("#onboarding-modal {{ z-index:70",portal);self.assertNotIn('target.classList.add("onboarding-spotlight")',js)
   self.assertIn("suppressed_by_onboarding",(ROOT/"app/routers/campaign_popups.py").read_text());self.assertIn("data-onboarding-target",portal);self.assertIn("ON CONFLICT",migration);self.assertNotIn("localStorage",js);self.assertIn("onboarding:ready",popup)
 if __name__=="__main__": unittest.main()

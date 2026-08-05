@@ -94,7 +94,8 @@ PORTAL_HTML = """<!DOCTYPE html>
         .touch-action {{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; }}
         .focusable:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {{ outline:2px solid #a78bfa; outline-offset:2px; }}
         body.onboarding-active > *:not(#onboarding-modal):not(script) {{ pointer-events:none; }}
-        .onboarding-spotlight {{ position:relative; z-index:60; outline:3px solid #a78bfa; outline-offset:5px; }}
+        body.onboarding-active {{ overflow:hidden; }}
+        .onboarding-spotlight {{ position:fixed; z-index:60; border:3px solid #a78bfa; border-radius:14px; box-shadow:0 0 0 9999px rgba(3,7,18,.78),0 0 28px rgba(167,139,250,.48); pointer-events:none; transition:top .18s ease,left .18s ease,width .18s ease,height .18s ease; }}
         @media (prefers-reduced-motion: reduce) {{ .onboarding-spotlight, .progress-fill {{ transition:none !important; scroll-behavior:auto !important; }} .campaign-unread-pulse {{ animation:none !important; }} }}
         body.campaign-popup-open {{ overflow:hidden; }}
         .campaign-modal-backdrop {{ position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.84); overscroll-behavior:contain; }}
@@ -104,6 +105,8 @@ PORTAL_HTML = """<!DOCTYPE html>
         .portal-modal {{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,.78); }}
         .portal-modal.hidden {{ display:none; }}
         .modal-panel {{ width:min(100%,760px); max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px; }}
+        #onboarding-modal {{ z-index:70; display:block; padding:0; background:transparent; pointer-events:none; }}
+        #onboarding-modal .modal-panel {{ position:fixed; width:min(calc(100vw - 32px),440px); max-height:calc(100dvh - 32px); pointer-events:auto; box-shadow:0 28px 80px rgba(0,0,0,.62); }}
         .backup-row {{ display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid rgba(255,255,255,.08); padding:14px 0; }}
         @media (min-width:768px) {{ .dashboard-grid {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1.5rem; }} .metric-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
         @media (max-width:640px) {{ .backup-row {{ align-items:stretch; flex-direction:column; }} .backup-row .compact-action, .mobile-full {{ width:100%; }} .modal-panel {{ max-height:calc(100dvh - 20px); border-radius:16px; }} }}
@@ -348,7 +351,7 @@ PORTAL_HTML = """<!DOCTYPE html>
             else {{ const data = await res.json(); msgEl.textContent = data.detail || 'Failed'; msgEl.className = 'text-sm mt-2 text-red-400'; }}
         }}
     </script>
-    <div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
+    <div id="onboarding-spotlight" class="onboarding-spotlight hidden" aria-hidden="true"></div><div id="onboarding-modal" class="portal-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div role="document" tabindex="-1" class="card modal-panel p-5 sm:p-7"><p id="onboarding-progress" role="status" class="text-sm text-purple-300"></p><h2 id="onboarding-title" class="mt-3 text-2xl font-bold text-white"></h2><p id="onboarding-text" class="mt-3 text-gray-300 leading-6"></p><div class="mt-6 flex flex-wrap justify-between gap-2"><button id="onboarding-skip" type="button" class="touch-action">Skip tour</button><div class="flex gap-2"><button id="onboarding-back" type="button" class="touch-action">Back</button><button id="onboarding-next" type="button" class="compact-action">Next</button></div></div></div></div>
         <script src="/static/onboarding.js?v={build_commit}"></script>
     <div id="login-promotion-modal" class="campaign-modal-backdrop modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-promotion-title">
         <div role="document" tabindex="-1" class="campaign-modal-card modal-card p-5 sm:p-7">
